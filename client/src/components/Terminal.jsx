@@ -3,16 +3,15 @@ import { useAuthStore } from '../store';
 import { useI18n } from '../i18n';
 import { Terminal as TerminalIcon, Trash2, XCircle, Monitor } from 'lucide-react';
 
-const MAX_OUTPUT_LINES = 3000;
+const MAX_OUTPUT_LENGTH = 100000;
 
 export default function Terminal({ stackName, services, initialContainer }) {
-    const [output, setOutput] = useState([]);
+    const [output, setOutput] = useState('');
     const [connected, setConnected] = useState(false);
     const [selectedContainer, setSelectedContainer] = useState(initialContainer || null);
     const [shell, setShell] = useState('/bin/sh');
     const wsRef = useRef(null);
     const terminalRef = useRef(null);
-    const inputRef = useRef(null);
     const token = useAuthStore((s) => s.token);
     const { t } = useI18n();
     const pingRef = useRef(null);
@@ -21,11 +20,11 @@ export default function Terminal({ stackName, services, initialContainer }) {
         (svc) => svc.status === 'running' && svc.containerId
     );
 
-    const addOutput = useCallback((line) => {
+    const appendOutput = useCallback((data) => {
         setOutput((prev) => {
-            const next = [...prev, line];
-            if (next.length > MAX_OUTPUT_LINES) {
-                return next.slice(-2000);
+            const next = prev + data;
+            if (next.length > MAX_OUTPUT_LENGTH) {
+                return next.slice(-60000);
             }
             return next;
         });
@@ -50,13 +49,13 @@ export default function Terminal({ stackName, services, initialContainer }) {
                 const msg = JSON.parse(event.data);
                 if (msg.type === 'ready') {
                     setConnected(true);
-                    addOutput({ type: 'system', data: `Connected to ${selectedContainer.name || msg.containerId} (${msg.shell})` });
+                    appendOutput(`\r\n\x1b[1;32mConnected to ${selectedContainer.name || msg.containerId} (${msg.shell})\x1b[0m\r\n`);
                 } else if (msg.type === 'stdout' || msg.type === 'stderr') {
-                    addOutput({ type: msg.type, data: msg.data });
+                    appendOutput(msg.data);
                 } else if (msg.type === 'error') {
-                    addOutput({ type: 'error', data: msg.data });
+                    appendOutput(`\r\n\x1b[31m${msg.data}\x1b[0m\r\n`);
                 } else if (msg.type === 'done') {
-                    addOutput({ type: 'system', data: t.terminal.sessionEnded || 'Session ended.' });
+                    appendOutput(`\r\n\x1b[33m${t.terminal.sessionEnded || 'Session ended.'}\x1b[0m\r\n`);
                     setConnected(false);
                 }
             } catch {}
@@ -64,7 +63,7 @@ export default function Terminal({ stackName, services, initialContainer }) {
 
         ws.onerror = () => {
             setConnected(false);
-            addOutput({ type: 'error', data: t.terminal.connectionError });
+            appendOutput(`\r\n\x1b[31m${t.terminal.connectionError}\x1b[0m\r\n`);
         };
 
         ws.onclose = () => {
@@ -81,7 +80,7 @@ export default function Terminal({ stackName, services, initialContainer }) {
                 ws.send(JSON.stringify({ type: 'ping' }));
             }
         }, 30000);
-    }, [selectedContainer, shell, token, addOutput, t]);
+    }, [selectedContainer, shell, token, appendOutput, t]);
 
     useEffect(() => {
         if (selectedContainer?.containerId) {
@@ -106,8 +105,8 @@ export default function Terminal({ stackName, services, initialContainer }) {
     }, [output]);
 
     useEffect(() => {
-        if (connected && inputRef.current) {
-            inputRef.current.focus();
+        if (connected && terminalRef.current) {
+            terminalRef.current.focus();
         }
     }, [connected]);
 
@@ -118,27 +117,112 @@ export default function Terminal({ stackName, services, initialContainer }) {
         }
     }, []);
 
-    const killProcess = useCallback(() => {
-        const ws = wsRef.current;
-        if (ws && ws.readyState === WebSocket.OPEN) {
-            ws.send(JSON.stringify({ type: 'kill' }));
-        }
-    }, []);
+    const handleTerminalKeyDown = useCallback((e) => {
+        if (!connected) return;
 
-    const handleKeyDown = (e) => {
+        if (e.key === 'Backspace') {
+            e.preventDefault();
+            sendInput('\x7f');
+            return;
+        }
+
+        if (e.key === 'Tab') {
+            e.preventDefault();
+            sendInput('\t');
+            return;
+        }
+
         if (e.key === 'Enter') {
             e.preventDefault();
-            sendInput(e.target.value + '\n');
-            e.target.value = '';
+            sendInput('\r');
+            return;
         }
-    };
+
+        if (e.key === 'Escape') {
+            e.preventDefault();
+            sendInput('\x1b');
+            return;
+        }
+
+        if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            sendInput('\x1b[A');
+            return;
+        }
+        if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            sendInput('\x1b[B');
+            return;
+        }
+        if (e.key === 'ArrowRight') {
+            e.preventDefault();
+            sendInput('\x1b[C');
+            return;
+        }
+        if (e.key === 'ArrowLeft') {
+            e.preventDefault();
+            sendInput('\x1b[D');
+            return;
+        }
+
+        if (e.key === 'Home') {
+            e.preventDefault();
+            sendInput('\x1b[H');
+            return;
+        }
+        if (e.key === 'End') {
+            e.preventDefault();
+            sendInput('\x1b[F');
+            return;
+        }
+
+        if (e.key === 'Delete') {
+            e.preventDefault();
+            sendInput('\x1b[3~');
+            return;
+        }
+
+        if (e.key === 'PageUp') {
+            e.preventDefault();
+            sendInput('\x1b[5~');
+            return;
+        }
+        if (e.key === 'PageDown') {
+            e.preventDefault();
+            sendInput('\x1b[6~');
+            return;
+        }
+
+        if (e.ctrlKey) {
+            const ctrlMap = {
+                'a': '\x01', 'b': '\x02', 'c': '\x03', 'd': '\x04',
+                'e': '\x05', 'f': '\x06', 'g': '\x07', 'h': '\x08',
+                'i': '\x09', 'j': '\x0a', 'k': '\x0b', 'l': '\x0c',
+                'm': '\x0d', 'n': '\x0e', 'o': '\x0f', 'p': '\x10',
+                'q': '\x11', 'r': '\x12', 's': '\x13', 't': '\x14',
+                'u': '\x15', 'v': '\x16', 'w': '\x17', 'x': '\x18',
+                'y': '\x19', 'z': '\x1a',
+            };
+            const ch = ctrlMap[e.key.toLowerCase()];
+            if (ch) {
+                e.preventDefault();
+                sendInput(ch);
+                return;
+            }
+        }
+
+        if (e.key.length === 1 && !e.ctrlKey && !e.metaKey) {
+            e.preventDefault();
+            sendInput(e.key);
+        }
+    }, [connected, sendInput]);
 
     const handleClear = () => {
-        setOutput([]);
+        setOutput('');
     };
 
     const handleReconnect = () => {
-        setOutput([]);
+        setOutput('');
         setConnected(false);
         connect();
     };
@@ -148,7 +232,7 @@ export default function Terminal({ stackName, services, initialContainer }) {
             wsRef.current.close();
             wsRef.current = null;
         }
-        setOutput([]);
+        setOutput('');
         setConnected(false);
         setSelectedContainer(svc);
     };
@@ -159,7 +243,7 @@ export default function Terminal({ stackName, services, initialContainer }) {
                 wsRef.current.close();
                 wsRef.current = null;
             }
-            setOutput([]);
+            setOutput('');
             setConnected(false);
         }
         setShell(newShell);
@@ -170,7 +254,7 @@ export default function Terminal({ stackName, services, initialContainer }) {
             wsRef.current.close();
             wsRef.current = null;
         }
-        setOutput([]);
+        setOutput('');
         setConnected(false);
         setSelectedContainer(null);
     };
@@ -278,11 +362,6 @@ export default function Terminal({ stackName, services, initialContainer }) {
                         </span>
                     </div>
                     <div className="flex items-center gap-1">
-                        {connected && (
-                            <button onClick={killProcess} className="btn-ghost btn-sm text-danger hover:bg-danger-light" title={t.common.cancel}>
-                                <XCircle size={12} />
-                            </button>
-                        )}
                         {!connected && (
                             <button onClick={handleReconnect} className="btn-ghost btn-sm text-warning">
                                 ↻
@@ -295,42 +374,12 @@ export default function Terminal({ stackName, services, initialContainer }) {
                 </div>
                 <div
                     ref={terminalRef}
-                    className="bg-surface-50 dark:bg-surface-950 p-4 font-mono text-xs leading-relaxed overflow-auto"
-                    style={{ height: '400px' }}
+                    tabIndex={0}
+                    onKeyDown={handleTerminalKeyDown}
+                    className="bg-surface-50 dark:bg-surface-950 p-4 font-mono text-xs leading-relaxed overflow-auto cursor-text focus:outline-none focus:ring-1 focus:ring-primary-500"
+                    style={{ height: '400px', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}
                 >
-                    {output.length === 0 ? (
-                        <p className="text-text-muted">{t.terminal.containerInput}</p>
-                    ) : (
-                        output.map((line, i) => (
-                            <div
-                                key={i}
-                                className={`whitespace-pre-wrap break-all ${
-                                    line.type === 'stderr'
-                                    ? 'text-warning-dark dark:text-warning'
-                                    : line.type === 'error'
-                                    ? 'text-danger'
-                                    : line.type === 'system'
-                                    ? 'text-text-muted italic'
-                                    : 'text-text-secondary'
-                                }`}
-                            >
-                                {line.data}
-                            </div>
-                        ))
-                    )}
-                </div>
-
-                <div className="border-t border-border flex items-center">
-                    <span className="text-success font-mono text-sm px-3">#</span>
-                    <input
-                        ref={inputRef}
-                        type="text"
-                        onKeyDown={handleKeyDown}
-                        className="flex-1 bg-transparent text-text-primary font-mono text-sm px-2 py-2.5 focus:outline-none"
-                        placeholder={connected ? t.terminal.containerInput : '...'}
-                        disabled={!connected}
-                        autoFocus
-                    />
+                    {output || (connected ? '' : t.terminal.containerInput)}
                 </div>
             </div>
         </div>

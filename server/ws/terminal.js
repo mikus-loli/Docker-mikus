@@ -45,7 +45,7 @@ function createTerminalWsHandler(stackManager, jwtSecret, db) {
         stackManager.docker.execContainerInteractive(containerId, shell)
             .then((stream) => {
                 if (destroyed) {
-                    stream.destroy();
+                    try { stream.destroy(); } catch {}
                     return;
                 }
 
@@ -53,13 +53,33 @@ function createTerminalWsHandler(stackManager, jwtSecret, db) {
 
                 ws.send(JSON.stringify({ type: 'ready', mode: 'container', containerId, shell }));
 
+                if (typeof stream.resume === 'function') {
+                    stream.resume();
+                }
+
                 stream.on('data', (chunk) => {
                     if (ws.readyState === 1 && !destroyed) {
-                        ws.send(JSON.stringify({ type: 'stdout', data: chunk.toString() }));
+                        ws.send(JSON.stringify({ type: 'stdout', data: chunk.toString('utf8') }));
+                    }
+                });
+
+                stream.on('readable', () => {
+                    let chunk;
+                    while ((chunk = stream.read()) !== null) {
+                        if (ws.readyState === 1 && !destroyed) {
+                            ws.send(JSON.stringify({ type: 'stdout', data: chunk.toString('utf8') }));
+                        }
                     }
                 });
 
                 stream.on('end', () => {
+                    execStream = null;
+                    if (ws.readyState === 1 && !destroyed) {
+                        ws.send(JSON.stringify({ type: 'done', code: 0 }));
+                    }
+                });
+
+                stream.on('close', () => {
                     execStream = null;
                     if (ws.readyState === 1 && !destroyed) {
                         ws.send(JSON.stringify({ type: 'done', code: 0 }));
@@ -73,13 +93,6 @@ function createTerminalWsHandler(stackManager, jwtSecret, db) {
                         ws.send(JSON.stringify({ type: 'done', code: 1 }));
                     }
                 });
-
-                stream.on('close', () => {
-                    execStream = null;
-                    if (ws.readyState === 1 && !destroyed) {
-                        ws.send(JSON.stringify({ type: 'done', code: 0 }));
-                    }
-                });
             })
             .catch((err) => {
                 if (ws.readyState === 1 && !destroyed) {
@@ -89,15 +102,19 @@ function createTerminalWsHandler(stackManager, jwtSecret, db) {
             });
 
         ws.on('message', (data) => {
-            if (destroyed || !execStream) return;
+            if (destroyed) return;
             try {
                 const msg = JSON.parse(data.toString());
-                if (msg.type === 'input') {
-                    if (execStream.writable) {
+                if (msg.type === 'input' && execStream) {
+                    try {
                         execStream.write(msg.data);
-                    }
-                } else if (msg.type === 'resize') {
-                    // resize not supported via dockerode exec stream
+                    } catch {}
+                } else if (msg.type === 'resize' && execStream) {
+                    try {
+                        if (typeof execStream.resize === 'function') {
+                            execStream.resize(msg.cols, msg.rows);
+                        }
+                    } catch {}
                 }
             } catch {}
         });
@@ -105,6 +122,7 @@ function createTerminalWsHandler(stackManager, jwtSecret, db) {
         ws.on('close', () => {
             destroyed = true;
             if (execStream) {
+                try { execStream.end(); } catch {}
                 try { execStream.destroy(); } catch {}
                 execStream = null;
             }
@@ -113,6 +131,7 @@ function createTerminalWsHandler(stackManager, jwtSecret, db) {
         ws.on('error', () => {
             destroyed = true;
             if (execStream) {
+                try { execStream.end(); } catch {}
                 try { execStream.destroy(); } catch {}
                 execStream = null;
             }
