@@ -1,0 +1,26 @@
+version: "3.8"
+
+services:
+  mikus:
+    image: ghcr.io/${GITHUB_USER:-your-username}/mikus:latest
+    build: .
+    container_name: mikus
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - mikus-data:/app/data
+      - mikus-stacks:/app/stacks
+    environment:
+      - JWT_SECRET=change-this-to-a-secure-secret
+      - PORT=3001
+      - DOCKER_SOCKET=/var/run/docker.sock
+    labels:
+      - "com.mikus.managed=true"
+
+volumes:
+  mikus-data:
+    driver: local
+  mikus-stacks:
+    driver: local
