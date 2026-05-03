@@ -39,72 +39,82 @@ function createTerminalWsHandler(stackManager, jwtSecret, db) {
             return;
         }
 
-        let proc = null;
         let destroyed = false;
+        let execStream = null;
 
-        try {
-            proc = stackManager.docker.execContainerInteractive(containerId, shell);
-        } catch (err) {
-            ws.send(JSON.stringify({ type: 'error', data: 'Failed to exec into container' }));
-            ws.close();
-            return;
-        }
+        stackManager.docker.execContainerInteractive(containerId, shell)
+            .then((stream) => {
+                if (destroyed) {
+                    stream.destroy();
+                    return;
+                }
 
-        ws.send(JSON.stringify({ type: 'ready', mode: 'container', containerId, shell }));
+                execStream = stream;
 
-        proc.stdout.on('data', (chunk) => {
-            if (ws.readyState === 1 && !destroyed) {
-                ws.send(JSON.stringify({ type: 'stdout', data: chunk.toString() }));
-            }
-        });
+                ws.send(JSON.stringify({ type: 'ready', mode: 'container', containerId, shell }));
 
-        proc.stderr.on('data', (chunk) => {
-            if (ws.readyState === 1 && !destroyed) {
-                ws.send(JSON.stringify({ type: 'stderr', data: chunk.toString() }));
-            }
-        });
+                stream.on('data', (chunk) => {
+                    if (ws.readyState === 1 && !destroyed) {
+                        ws.send(JSON.stringify({ type: 'stdout', data: chunk.toString() }));
+                    }
+                });
 
-        proc.on('close', (code) => {
-            proc = null;
-            if (ws.readyState === 1 && !destroyed) {
-                ws.send(JSON.stringify({ type: 'done', code: code ?? 1 }));
-            }
-        });
+                stream.on('end', () => {
+                    execStream = null;
+                    if (ws.readyState === 1 && !destroyed) {
+                        ws.send(JSON.stringify({ type: 'done', code: 0 }));
+                    }
+                });
 
-        proc.on('error', () => {
-            proc = null;
-            if (ws.readyState === 1 && !destroyed) {
-                ws.send(JSON.stringify({ type: 'error', data: 'Process error' }));
-            }
-        });
+                stream.on('error', (err) => {
+                    execStream = null;
+                    if (ws.readyState === 1 && !destroyed) {
+                        ws.send(JSON.stringify({ type: 'error', data: err.message }));
+                        ws.send(JSON.stringify({ type: 'done', code: 1 }));
+                    }
+                });
+
+                stream.on('close', () => {
+                    execStream = null;
+                    if (ws.readyState === 1 && !destroyed) {
+                        ws.send(JSON.stringify({ type: 'done', code: 0 }));
+                    }
+                });
+            })
+            .catch((err) => {
+                if (ws.readyState === 1 && !destroyed) {
+                    ws.send(JSON.stringify({ type: 'error', data: 'Failed to exec into container: ' + err.message }));
+                    ws.close();
+                }
+            });
 
         ws.on('message', (data) => {
-            if (destroyed || !proc) return;
+            if (destroyed || !execStream) return;
             try {
                 const msg = JSON.parse(data.toString());
-                if (msg.type === 'input' && proc.stdin.writable) {
-                    proc.stdin.write(msg.data);
-                } else if (msg.type === 'kill') {
-                    if (!proc.killed) {
-                        try { proc.kill('SIGKILL'); } catch {}
+                if (msg.type === 'input') {
+                    if (execStream.writable) {
+                        execStream.write(msg.data);
                     }
+                } else if (msg.type === 'resize') {
+                    // resize not supported via dockerode exec stream
                 }
             } catch {}
         });
 
         ws.on('close', () => {
             destroyed = true;
-            if (proc && !proc.killed) {
-                try { proc.kill('SIGKILL'); } catch {}
-                proc = null;
+            if (execStream) {
+                try { execStream.destroy(); } catch {}
+                execStream = null;
             }
         });
 
         ws.on('error', () => {
             destroyed = true;
-            if (proc && !proc.killed) {
-                try { proc.kill('SIGKILL'); } catch {}
-                proc = null;
+            if (execStream) {
+                try { execStream.destroy(); } catch {}
+                execStream = null;
             }
         });
     };

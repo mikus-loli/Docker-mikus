@@ -170,10 +170,21 @@ class DockerService {
         });
     }
 
-    execContainerInteractive(containerId, shell = '/bin/sh') {
-        return spawn('docker', ['exec', '-it', containerId, shell], {
-            env: process.env,
+    async execContainerInteractive(containerId, shell = '/bin/sh') {
+        const container = this.docker.getContainer(containerId);
+        const exec = await container.exec({
+            AttachStdin: true,
+            AttachStdout: true,
+            AttachStderr: true,
+            Tty: true,
+            Cmd: [shell],
         });
+        const stream = await exec.start({
+            hijack: true,
+            stdin: true,
+            Tty: true,
+        });
+        return stream;
     }
 }
 
