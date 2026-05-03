@@ -102,25 +102,8 @@ export default function Layout() {
                     </div>
                 )}
 
-                <div className="p-3 border-t border-border space-y-2">
-                    <div className="flex items-center gap-2">
-                        <button
-                            onClick={toggleTheme}
-                            className="btn-icon text-text-muted hover:text-text-primary hover:bg-surface-200 dark:hover:bg-surface-700 flex-1"
-                            title={t.theme.toggle}
-                        >
-                            {resolvedTheme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
-                        </button>
-                        <button
-                            onClick={toggleLanguage}
-                            className="btn-icon text-text-muted hover:text-text-primary hover:bg-surface-200 dark:hover:bg-surface-700 flex-1"
-                            title={t.language.toggle}
-                        >
-                            <Languages size={16} />
-                            <span className="text-xs ml-1">{language === 'zh' ? '中' : 'EN'}</span>
-                        </button>
-                    </div>
-                    <div className="flex items-center justify-between px-3 py-2">
+                <div className="p-3 border-t border-border">
+                    <div className="flex items-center justify-between px-1 py-2 mb-2">
                         <div className="flex items-center gap-2 min-w-0">
                             <div className="w-7 h-7 bg-surface-300 dark:bg-surface-600 rounded-full flex items-center justify-center text-xs font-bold text-text-secondary shrink-0">
                                 {user?.username?.[0]?.toUpperCase() || 'A'}
@@ -133,6 +116,23 @@ export default function Layout() {
                             title={t.common.logout}
                         >
                             <LogOut size={16} />
+                        </button>
+                    </div>
+                    <div className="flex items-center gap-2">
+                        <button
+                            onClick={toggleTheme}
+                            className="btn-icon text-text-muted hover:text-text-primary hover:bg-surface-200 dark:hover:bg-surface-700 flex-1 justify-center"
+                            title={t.theme.toggle}
+                        >
+                            {resolvedTheme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
+                        </button>
+                        <button
+                            onClick={toggleLanguage}
+                            className="btn-icon text-text-muted hover:text-text-primary hover:bg-surface-200 dark:hover:bg-surface-700 flex-1 inline-flex items-center justify-center"
+                            title={t.language.toggle}
+                        >
+                            <Languages size={16} />
+                            <span className="text-xs ml-1">{language === 'zh' ? '中' : 'EN'}</span>
                         </button>
                     </div>
                 </div>
