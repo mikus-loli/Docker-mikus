@@ -9,10 +9,12 @@ export default function Terminal({ stackName }) {
     const [output, setOutput] = useState([]);
     const [command, setCommand] = useState('');
     const [isRunning, setIsRunning] = useState(false);
+    const [connected, setConnected] = useState(false);
     const wsRef = useRef(null);
     const terminalRef = useRef(null);
     const token = useAuthStore((s) => s.token);
     const { t } = useI18n();
+    const pingRef = useRef(null);
 
     const addOutput = useCallback((line) => {
         setOutput((prev) => {
@@ -24,20 +26,11 @@ export default function Terminal({ stackName }) {
         });
     }, []);
 
-    const killProcess = useCallback(() => {
-        if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-            wsRef.current.send(JSON.stringify({ type: 'kill' }));
-        }
-    }, []);
-
-    const connectAndRun = useCallback((cmd) => {
+    const connect = useCallback(() => {
         if (wsRef.current) {
             wsRef.current.close();
             wsRef.current = null;
         }
-
-        addOutput({ type: 'input', data: `$ docker compose ${cmd}` });
-        setIsRunning(true);
 
         const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
         const wsUrl = `${wsProtocol}//${window.location.host}/ws?type=terminal&stack=${stackName}&token=${token}`;
@@ -46,41 +39,67 @@ export default function Terminal({ stackName }) {
         wsRef.current = ws;
 
         ws.onopen = () => {
-            if (ws.readyState === WebSocket.OPEN) {
-                ws.send(JSON.stringify({ type: 'command', command: cmd }));
-            }
+            setConnected(true);
         };
 
         ws.onmessage = (event) => {
             try {
                 const msg = JSON.parse(event.data);
-                if (msg.type === 'stdout' || msg.type === 'stderr') {
+                if (msg.type === 'ready') {
+                    setConnected(true);
+                } else if (msg.type === 'running') {
+                    setIsRunning(true);
+                    addOutput({ type: 'input', data: `$ docker compose ${msg.command}` });
+                } else if (msg.type === 'stdout' || msg.type === 'stderr') {
                     addOutput({ type: msg.type, data: msg.data });
                 } else if (msg.type === 'error') {
                     addOutput({ type: 'error', data: msg.data });
-                } else if (msg.type === 'exit') {
+                } else if (msg.type === 'done') {
                     addOutput({
                         type: 'system',
                         data: t.terminal.processExited.replace('{code}', msg.code),
                     });
                     setIsRunning(false);
-                    ws.close();
-                    wsRef.current = null;
                 }
             } catch {}
         };
 
         ws.onerror = () => {
+            setConnected(false);
             setIsRunning(false);
             addOutput({ type: 'error', data: t.terminal.connectionError });
-            wsRef.current = null;
         };
 
         ws.onclose = () => {
+            setConnected(false);
             setIsRunning(false);
             wsRef.current = null;
+            if (pingRef.current) {
+                clearInterval(pingRef.current);
+                pingRef.current = null;
+            }
         };
-    }, [stackName, token, t, addOutput]);
+
+        pingRef.current = setInterval(() => {
+            if (ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ type: 'ping' }));
+            }
+        }, 30000);
+    }, [stackName, token, addOutput, t]);
+
+    useEffect(() => {
+        connect();
+        return () => {
+            if (wsRef.current) {
+                wsRef.current.close();
+                wsRef.current = null;
+            }
+            if (pingRef.current) {
+                clearInterval(pingRef.current);
+                pingRef.current = null;
+            }
+        };
+    }, [connect]);
 
     useEffect(() => {
         if (terminalRef.current) {
@@ -88,33 +107,37 @@ export default function Terminal({ stackName }) {
         }
     }, [output]);
 
-    useEffect(() => {
-        return () => {
-            if (wsRef.current) {
-                wsRef.current.close();
-                wsRef.current = null;
-            }
-        };
+    const sendCommand = useCallback((cmd) => {
+        const ws = wsRef.current;
+        if (!ws || ws.readyState !== WebSocket.OPEN) {
+            addOutput({ type: 'error', data: t.terminal.connectionError });
+            connect();
+            return;
+        }
+        ws.send(JSON.stringify({ type: 'command', command: cmd }));
+    }, [connect, addOutput, t]);
+
+    const killProcess = useCallback(() => {
+        const ws = wsRef.current;
+        if (ws && ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({ type: 'kill' }));
+        }
     }, []);
 
     const handleSubmit = (e) => {
         e.preventDefault();
         if (!command.trim() || isRunning) return;
-        connectAndRun(command.trim());
+        sendCommand(command.trim());
         setCommand('');
-    };
-
-    const handlePreset = (cmd) => {
-        if (isRunning) return;
-        connectAndRun(cmd);
     };
 
     const handleClear = () => {
         setOutput([]);
     };
 
-    const handleKill = () => {
-        killProcess();
+    const handleReconnect = () => {
+        addOutput({ type: 'system', data: 'Reconnecting...' });
+        connect();
     };
 
     return (
@@ -122,15 +145,20 @@ export default function Terminal({ stackName }) {
             <div className="card overflow-hidden">
                 <div className="bg-surface-200 dark:bg-surface-800 px-4 py-2 border-b border-border flex items-center justify-between">
                     <div className="flex items-center gap-2">
-                        <TerminalIcon size={14} className={isRunning ? 'text-success animate-pulse' : 'text-text-muted'} />
+                        <TerminalIcon size={14} className={connected ? (isRunning ? 'text-success animate-pulse' : 'text-success') : 'text-danger'} />
                         <span className="text-xs text-text-muted">
                             docker compose [{stackName}]
                         </span>
                     </div>
                     <div className="flex items-center gap-1">
                         {isRunning && (
-                            <button onClick={handleKill} className="btn-ghost btn-sm text-danger hover:bg-danger-light" title={t.common.cancel}>
+                            <button onClick={killProcess} className="btn-ghost btn-sm text-danger hover:bg-danger-light" title={t.common.cancel}>
                                 <XCircle size={12} />
+                            </button>
+                        )}
+                        {!connected && (
+                            <button onClick={handleReconnect} className="btn-ghost btn-sm text-warning" title="Reconnect">
+                                ↻
                             </button>
                         )}
                         <button onClick={handleClear} className="btn-ghost btn-sm text-text-muted">
@@ -180,13 +208,13 @@ export default function Terminal({ stackName }) {
                         value={command}
                         onChange={(e) => setCommand(e.target.value)}
                         className="flex-1 bg-transparent text-text-primary font-mono text-sm px-2 py-2.5 focus:outline-none"
-                        placeholder={t.terminal.placeholder}
-                        disabled={isRunning}
+                        placeholder={isRunning ? '...' : t.terminal.placeholder}
+                        disabled={!connected}
                         autoFocus
                     />
                     <button
                         type="submit"
-                        disabled={isRunning || !command.trim()}
+                        disabled={isRunning || !command.trim() || !connected}
                         className="px-3 py-2.5 text-text-muted hover:text-text-primary transition-colors disabled:opacity-50"
                     >
                         <Send size={14} />

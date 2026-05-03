@@ -13,7 +13,11 @@ function createContainerRoutes(dockerService) {
 
     router.get('/:id', async (req, res) => {
         try {
-            const info = await dockerService.getContainerInfo(req.params.id);
+            const id = req.params.id;
+            if (!/^[a-zA-Z0-9]+$/.test(id)) {
+                return res.status(400).json({ error: 'Invalid container ID' });
+            }
+            const info = await dockerService.getContainerInfo(id);
             res.json(info);
         } catch (err) {
             res.status(404).json({ error: err.message });
@@ -58,11 +62,9 @@ function createContainerRoutes(dockerService) {
 
     router.get('/:id/logs', async (req, res) => {
         try {
-            const { tail = 100, since = 0 } = req.query;
-            const logs = await dockerService.getContainerLogs(req.params.id, {
-                tail: parseInt(tail),
-                since: parseInt(since),
-            });
+            const tail = Math.min(parseInt(req.query.tail) || 100, 5000);
+            const since = parseInt(req.query.since) || 0;
+            const logs = await dockerService.getContainerLogs(req.params.id, { tail, since });
             res.json({ logs: logs.toString('utf8') });
         } catch (err) {
             res.status(500).json({ error: err.message });

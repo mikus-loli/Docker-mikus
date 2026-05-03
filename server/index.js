@@ -18,14 +18,37 @@ const STACKS_DIR = process.env.STACKS_DIR || path.join(__dirname, '..', 'stacks'
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, '..', 'data');
 const JWT_SECRET = process.env.JWT_SECRET || 'mikus-secret-change-in-production';
 
+if (JWT_SECRET === 'mikus-secret-change-in-production') {
+    console.warn('WARNING: Using default JWT secret. Set JWT_SECRET environment variable in production!');
+}
+
 const app = express();
 const server = http.createServer(app);
 
-const wss = new WebSocketServer({ server, path: '/ws' });
+const wss = new WebSocketServer({
+    server,
+    path: '/ws',
+    maxPayload: 1024 * 1024,
+    verifyClient: (info, callback) => {
+        const url = new URL(info.req.url, `http://${info.req.headers.host}`);
+        const token = url.searchParams.get('token');
+        if (!token) {
+            callback(false, 401, 'Authentication required');
+            return;
+        }
+        try {
+            const jwt = require('jsonwebtoken');
+            jwt.verify(token, JWT_SECRET);
+            callback(true);
+        } catch {
+            callback(false, 401, 'Invalid token');
+        }
+    },
+});
 
 app.use(compression());
 app.use(cors());
-app.use(express.json({ limit: '10mb' }));
+app.use(express.json({ limit: '1mb' }));
 
 const db = initDB(DATA_DIR);
 const dockerService = new DockerService();
@@ -45,7 +68,7 @@ app.get('/api/system/info', authMiddleware(JWT_SECRET), async (req, res) => {
     }
 });
 
-app.use(express.static(path.join(__dirname, '..', 'client', 'dist')));
+app.use(express.static(path.join(__dirname, '..', 'client', 'dist'), { maxAge: '1h' }));
 
 app.get('*', (req, res) => {
     res.sendFile(path.join(__dirname, '..', 'client', 'dist', 'index.html'));
@@ -86,6 +109,14 @@ process.on('SIGINT', () => {
     server.close();
     db.close();
     process.exit(0);
+});
+
+process.on('uncaughtException', (err) => {
+    console.error('Uncaught Exception:', err);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+    console.error('Unhandled Rejection:', reason);
 });
 
 module.exports = { app, server };

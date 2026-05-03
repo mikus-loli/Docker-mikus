@@ -19,6 +19,12 @@ async function request(path, options = {}) {
 
     const res = await fetch(`${API_BASE}${path}`, { ...options, headers });
 
+    if (res.status === 401) {
+        useAuthStore.getState().logout();
+        window.location.href = '/login';
+        throw new ApiError('Session expired', 401);
+    }
+
     if (!res.ok) {
         const data = await res.json().catch(() => ({ error: res.statusText }));
         throw new ApiError(data.error || 'Request failed', res.status);

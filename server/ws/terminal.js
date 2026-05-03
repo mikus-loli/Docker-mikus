@@ -45,6 +45,8 @@ function createTerminalWsHandler(stackManager) {
         let proc = null;
         let destroyed = false;
 
+        ws.send(JSON.stringify({ type: 'ready' }));
+
         function killProc() {
             if (proc && !proc.killed) {
                 try {
@@ -61,7 +63,10 @@ function createTerminalWsHandler(stackManager) {
                 const msg = JSON.parse(data.toString());
 
                 if (msg.type === 'command') {
-                    killProc();
+                    if (proc && !proc.killed) {
+                        ws.send(JSON.stringify({ type: 'error', data: 'A command is already running. Kill it first.' }));
+                        return;
+                    }
 
                     const commandStr = msg.command.trim();
                     if (!commandStr) {
@@ -82,6 +87,8 @@ function createTerminalWsHandler(stackManager) {
                         return;
                     }
 
+                    ws.send(JSON.stringify({ type: 'running', command: commandStr }));
+
                     proc.stdout.on('data', (chunk) => {
                         if (ws.readyState === 1 && !destroyed) {
                             ws.send(JSON.stringify({
@@ -101,23 +108,24 @@ function createTerminalWsHandler(stackManager) {
                     });
 
                     proc.on('close', (code) => {
+                        proc = null;
                         if (ws.readyState === 1 && !destroyed) {
                             ws.send(JSON.stringify({
-                                type: 'exit',
+                                type: 'done',
                                 code: code ?? 1,
                             }));
                         }
-                        proc = null;
                     });
 
                     proc.on('error', (err) => {
+                        proc = null;
                         if (ws.readyState === 1 && !destroyed) {
                             ws.send(JSON.stringify({
                                 type: 'error',
                                 data: `Process error: ${err.message}`,
                             }));
+                            ws.send(JSON.stringify({ type: 'done', code: 1 }));
                         }
-                        proc = null;
                     });
                 } else if (msg.type === 'input' && proc && !proc.killed) {
                     try {
@@ -129,9 +137,8 @@ function createTerminalWsHandler(stackManager) {
                     }
                 } else if (msg.type === 'kill') {
                     killProc();
-                    if (ws.readyState === 1) {
-                        ws.send(JSON.stringify({ type: 'exit', code: -1 }));
-                    }
+                } else if (msg.type === 'ping') {
+                    ws.send(JSON.stringify({ type: 'pong' }));
                 }
             } catch (err) {
                 console.error('Terminal WS error:', err);

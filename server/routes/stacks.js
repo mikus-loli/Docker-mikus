@@ -12,7 +12,11 @@ function createStackRoutes(stackManager) {
 
     router.get('/:name', async (req, res) => {
         try {
-            const stack = await stackManager.getStack(req.params.name);
+            const name = req.params.name;
+            if (!/^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/.test(name)) {
+                return res.status(400).json({ error: 'Invalid stack name' });
+            }
+            const stack = await stackManager.getStack(name);
             res.json(stack);
         } catch (err) {
             res.status(404).json({ error: err.message });
@@ -24,6 +28,9 @@ function createStackRoutes(stackManager) {
             const { name, compose, env } = req.body;
             if (!name || !compose) {
                 return res.status(400).json({ error: 'Name and compose content are required' });
+            }
+            if (!/^[a-z0-9][a-z0-9_-]*$/.test(name)) {
+                return res.status(400).json({ error: 'Invalid stack name format' });
             }
             const stack = await stackManager.createStack(name, compose, env);
             res.status(201).json(stack);
@@ -38,7 +45,11 @@ function createStackRoutes(stackManager) {
             if (!compose) {
                 return res.status(400).json({ error: 'Compose content is required' });
             }
-            const stack = await stackManager.updateStack(req.params.name, compose, env);
+            const name = req.params.name;
+            if (!/^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/.test(name)) {
+                return res.status(400).json({ error: 'Invalid stack name' });
+            }
+            const stack = await stackManager.updateStack(name, compose, env);
             res.json(stack);
         } catch (err) {
             res.status(404).json({ error: err.message });
@@ -47,7 +58,11 @@ function createStackRoutes(stackManager) {
 
     router.delete('/:name', async (req, res) => {
         try {
-            const result = await stackManager.deleteStack(req.params.name);
+            const name = req.params.name;
+            if (!/^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/.test(name)) {
+                return res.status(400).json({ error: 'Invalid stack name' });
+            }
+            const result = await stackManager.deleteStack(name);
             res.json(result);
         } catch (err) {
             res.status(404).json({ error: err.message });
