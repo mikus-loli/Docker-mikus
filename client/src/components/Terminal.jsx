@@ -1,7 +1,9 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { useAuthStore } from '../store';
 import { useI18n } from '../i18n';
-import { Terminal as TerminalIcon, Send, Trash2 } from 'lucide-react';
+import { Terminal as TerminalIcon, Send, Trash2, XCircle } from 'lucide-react';
+
+const MAX_OUTPUT_LINES = 3000;
 
 export default function Terminal({ stackName }) {
     const [output, setOutput] = useState([]);
@@ -22,12 +24,29 @@ export default function Terminal({ stackName }) {
         { label: t.terminal.presetCommands.restart, command: 'restart' },
     ];
 
+    const addOutput = useCallback((line) => {
+        setOutput((prev) => {
+            const next = [...prev, line];
+            if (next.length > MAX_OUTPUT_LINES) {
+                return next.slice(-2000);
+            }
+            return next;
+        });
+    }, []);
+
+    const killProcess = useCallback(() => {
+        if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+            wsRef.current.send(JSON.stringify({ type: 'kill' }));
+        }
+    }, []);
+
     const connectAndRun = useCallback((cmd) => {
         if (wsRef.current) {
             wsRef.current.close();
+            wsRef.current = null;
         }
 
-        setOutput((prev) => [...prev, { type: 'input', data: `$ docker compose ${cmd}` }]);
+        addOutput({ type: 'input', data: `$ docker compose ${cmd}` });
         setIsRunning(true);
 
         const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -37,36 +56,41 @@ export default function Terminal({ stackName }) {
         wsRef.current = ws;
 
         ws.onopen = () => {
-            ws.send(JSON.stringify({ type: 'command', command: cmd }));
+            if (ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ type: 'command', command: cmd }));
+            }
         };
 
         ws.onmessage = (event) => {
             try {
                 const msg = JSON.parse(event.data);
                 if (msg.type === 'stdout' || msg.type === 'stderr') {
-                    setOutput((prev) => [...prev, { type: msg.type, data: msg.data }]);
+                    addOutput({ type: msg.type, data: msg.data });
                 } else if (msg.type === 'error') {
-                    setOutput((prev) => [...prev, { type: 'error', data: msg.data }]);
+                    addOutput({ type: 'error', data: msg.data });
                 } else if (msg.type === 'exit') {
-                    setOutput((prev) => [
-                        ...prev,
-                        { type: 'system', data: t.terminal.processExited.replace('{code}', msg.code) },
-                    ]);
+                    addOutput({
+                        type: 'system',
+                        data: t.terminal.processExited.replace('{code}', msg.code),
+                    });
                     setIsRunning(false);
                     ws.close();
+                    wsRef.current = null;
                 }
             } catch {}
         };
 
         ws.onerror = () => {
             setIsRunning(false);
-            setOutput((prev) => [...prev, { type: 'error', data: t.terminal.connectionError }]);
+            addOutput({ type: 'error', data: t.terminal.connectionError });
+            wsRef.current = null;
         };
 
         ws.onclose = () => {
             setIsRunning(false);
+            wsRef.current = null;
         };
-    }, [stackName, token, t]);
+    }, [stackName, token, t, addOutput]);
 
     useEffect(() => {
         if (terminalRef.current) {
@@ -78,6 +102,7 @@ export default function Terminal({ stackName }) {
         return () => {
             if (wsRef.current) {
                 wsRef.current.close();
+                wsRef.current = null;
             }
         };
     }, []);
@@ -98,6 +123,10 @@ export default function Terminal({ stackName }) {
         setOutput([]);
     };
 
+    const handleKill = () => {
+        killProcess();
+    };
+
     return (
         <div className="space-y-3">
             <div className="flex items-center gap-2 flex-wrap">
@@ -111,6 +140,15 @@ export default function Terminal({ stackName }) {
                         {preset.label}
                     </button>
                 ))}
+                {isRunning && (
+                    <button
+                        onClick={handleKill}
+                        className="btn-danger btn-sm text-xs"
+                    >
+                        <XCircle size={12} />
+                        {t.common.cancel}
+                    </button>
+                )}
             </div>
 
             <div className="card overflow-hidden">
@@ -141,7 +179,9 @@ export default function Terminal({ stackName }) {
                                 className={`whitespace-pre-wrap break-all ${
                                     line.type === 'input'
                                         ? 'text-primary-600 dark:text-primary-400 font-bold'
-                                        : line.type === 'stderr' || line.type === 'error'
+                                        : line.type === 'stderr'
+                                        ? 'text-warning-dark dark:text-warning'
+                                        : line.type === 'error'
                                         ? 'text-danger'
                                         : line.type === 'system'
                                         ? 'text-text-muted italic'
