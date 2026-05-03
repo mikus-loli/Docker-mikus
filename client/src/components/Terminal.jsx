@@ -14,16 +14,6 @@ export default function Terminal({ stackName }) {
     const token = useAuthStore((s) => s.token);
     const { t } = useI18n();
 
-    const PRESET_COMMANDS = [
-        { label: t.terminal.presetCommands.up, command: 'up -d' },
-        { label: t.terminal.presetCommands.down, command: 'down' },
-        { label: t.terminal.presetCommands.ps, command: 'ps' },
-        { label: t.terminal.presetCommands.config, command: 'config' },
-        { label: t.terminal.presetCommands.pull, command: 'pull' },
-        { label: t.terminal.presetCommands.logs, command: 'logs --tail=50' },
-        { label: t.terminal.presetCommands.restart, command: 'restart' },
-    ];
-
     const addOutput = useCallback((line) => {
         setOutput((prev) => {
             const next = [...prev, line];
@@ -129,28 +119,6 @@ export default function Terminal({ stackName }) {
 
     return (
         <div className="space-y-3">
-            <div className="flex items-center gap-2 flex-wrap">
-                {PRESET_COMMANDS.map((preset) => (
-                    <button
-                        key={preset.command}
-                        onClick={() => handlePreset(preset.command)}
-                        disabled={isRunning}
-                        className="btn-secondary btn-sm text-xs font-mono"
-                    >
-                        {preset.label}
-                    </button>
-                ))}
-                {isRunning && (
-                    <button
-                        onClick={handleKill}
-                        className="btn-danger btn-sm text-xs"
-                    >
-                        <XCircle size={12} />
-                        {t.common.cancel}
-                    </button>
-                )}
-            </div>
-
             <div className="card overflow-hidden">
                 <div className="bg-surface-200 dark:bg-surface-800 px-4 py-2 border-b border-border flex items-center justify-between">
                     <div className="flex items-center gap-2">
@@ -159,9 +127,16 @@ export default function Terminal({ stackName }) {
                             docker compose [{stackName}]
                         </span>
                     </div>
-                    <button onClick={handleClear} className="btn-ghost btn-sm text-text-muted">
-                        <Trash2 size={12} />
-                    </button>
+                    <div className="flex items-center gap-1">
+                        {isRunning && (
+                            <button onClick={handleKill} className="btn-ghost btn-sm text-danger hover:bg-danger-light" title={t.common.cancel}>
+                                <XCircle size={12} />
+                            </button>
+                        )}
+                        <button onClick={handleClear} className="btn-ghost btn-sm text-text-muted">
+                            <Trash2 size={12} />
+                        </button>
+                    </div>
                 </div>
                 <div
                     ref={terminalRef}

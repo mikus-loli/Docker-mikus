@@ -35,7 +35,7 @@ export default function Layout() {
 
     return (
         <div className="min-h-screen bg-surface flex">
-            <aside className="w-64 sidebar flex flex-col fixed h-full z-30 lg:relative">
+            <aside className="w-64 sidebar flex flex-col h-screen sticky top-0">
                 <div className="p-5 border-b border-border">
                     <div className="flex items-center gap-3">
                         <div className="w-9 h-9 bg-gradient-to-br from-primary-500 to-purple-600 rounded-lg flex items-center justify-center shadow-lg shadow-primary-500/25">
@@ -102,7 +102,7 @@ export default function Layout() {
                     </div>
                 )}
 
-                <div className="p-3 border-t border-border mt-auto">
+                <div className="p-3 border-t border-border">
                     <div className="flex items-center justify-between px-1 py-2 mb-2">
                         <div className="flex items-center gap-2 min-w-0">
                             <div className="w-7 h-7 bg-surface-300 dark:bg-surface-600 rounded-full flex items-center justify-center text-xs font-bold text-text-secondary shrink-0">
