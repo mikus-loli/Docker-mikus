@@ -262,7 +262,7 @@ export default function StackDetail() {
                 )}
 
                 {activeTab === 'terminal' && (
-                    <Terminal stackName={name} container={terminalContainer} />
+                    <Terminal stackName={name} services={services} initialContainer={terminalContainer} />
                 )}
             </div>
         </div>

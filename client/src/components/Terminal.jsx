@@ -1,22 +1,25 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { useAuthStore } from '../store';
 import { useI18n } from '../i18n';
-import { Terminal as TerminalIcon, Send, Trash2, XCircle, Monitor } from 'lucide-react';
+import { Terminal as TerminalIcon, Trash2, XCircle, Monitor } from 'lucide-react';
 
 const MAX_OUTPUT_LINES = 3000;
 
-export default function Terminal({ stackName, container }) {
+export default function Terminal({ stackName, services, initialContainer }) {
     const [output, setOutput] = useState([]);
-    const [command, setCommand] = useState('');
-    const [isRunning, setIsRunning] = useState(false);
     const [connected, setConnected] = useState(false);
-    const [mode, setMode] = useState(container ? 'container' : 'compose');
+    const [selectedContainer, setSelectedContainer] = useState(initialContainer || null);
+    const [shell, setShell] = useState('/bin/sh');
     const wsRef = useRef(null);
     const terminalRef = useRef(null);
     const inputRef = useRef(null);
     const token = useAuthStore((s) => s.token);
     const { t } = useI18n();
     const pingRef = useRef(null);
+
+    const runningServices = (services || []).filter(
+        (svc) => svc.status === 'running' && svc.containerId
+    );
 
     const addOutput = useCallback((line) => {
         setOutput((prev) => {
@@ -34,57 +37,38 @@ export default function Terminal({ stackName, container }) {
             wsRef.current = null;
         }
 
-        const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        let wsUrl = `${wsProtocol}//${window.location.host}/ws?type=terminal&stack=${stackName}&token=${token}`;
+        if (!selectedContainer?.containerId) return;
 
-        if (mode === 'container' && container?.containerId) {
-            wsUrl = `${wsProtocol}//${window.location.host}/ws?type=terminal&container=${container.containerId}&shell=/bin/sh&token=${token}`;
-        }
+        const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const wsUrl = `${wsProtocol}//${window.location.host}/ws?type=terminal&container=${selectedContainer.containerId}&shell=${shell}&token=${token}`;
 
         const ws = new WebSocket(wsUrl);
         wsRef.current = ws;
-
-        ws.onopen = () => {};
 
         ws.onmessage = (event) => {
             try {
                 const msg = JSON.parse(event.data);
                 if (msg.type === 'ready') {
                     setConnected(true);
-                    if (msg.mode === 'container') {
-                        addOutput({ type: 'system', data: `Connected to ${container?.name || msg.containerId} (${msg.shell})` });
-                    }
-                } else if (msg.type === 'running') {
-                    setIsRunning(true);
-                    addOutput({ type: 'input', data: `$ docker compose ${msg.command}` });
+                    addOutput({ type: 'system', data: `Connected to ${selectedContainer.name || msg.containerId} (${msg.shell})` });
                 } else if (msg.type === 'stdout' || msg.type === 'stderr') {
                     addOutput({ type: msg.type, data: msg.data });
                 } else if (msg.type === 'error') {
                     addOutput({ type: 'error', data: msg.data });
                 } else if (msg.type === 'done') {
-                    if (mode === 'compose') {
-                        addOutput({
-                            type: 'system',
-                            data: t.terminal.processExited.replace('{code}', msg.code),
-                        });
-                        setIsRunning(false);
-                    } else {
-                        addOutput({ type: 'system', data: 'Session ended.' });
-                        setConnected(false);
-                    }
+                    addOutput({ type: 'system', data: t.terminal.sessionEnded || 'Session ended.' });
+                    setConnected(false);
                 }
             } catch {}
         };
 
         ws.onerror = () => {
             setConnected(false);
-            setIsRunning(false);
             addOutput({ type: 'error', data: t.terminal.connectionError });
         };
 
         ws.onclose = () => {
             setConnected(false);
-            setIsRunning(false);
             wsRef.current = null;
             if (pingRef.current) {
                 clearInterval(pingRef.current);
@@ -97,10 +81,12 @@ export default function Terminal({ stackName, container }) {
                 ws.send(JSON.stringify({ type: 'ping' }));
             }
         }, 30000);
-    }, [stackName, token, mode, container, addOutput, t]);
+    }, [selectedContainer, shell, token, addOutput, t]);
 
     useEffect(() => {
-        connect();
+        if (selectedContainer?.containerId) {
+            connect();
+        }
         return () => {
             if (wsRef.current) {
                 wsRef.current.close();
@@ -111,7 +97,7 @@ export default function Terminal({ stackName, container }) {
                 pingRef.current = null;
             }
         };
-    }, [connect]);
+    }, [selectedContainer, shell]);
 
     useEffect(() => {
         if (terminalRef.current) {
@@ -120,20 +106,10 @@ export default function Terminal({ stackName, container }) {
     }, [output]);
 
     useEffect(() => {
-        if (mode === 'container' && connected && inputRef.current) {
+        if (connected && inputRef.current) {
             inputRef.current.focus();
         }
-    }, [mode, connected]);
-
-    const sendCommand = useCallback((cmd) => {
-        const ws = wsRef.current;
-        if (!ws || ws.readyState !== WebSocket.OPEN) {
-            addOutput({ type: 'error', data: t.terminal.connectionError });
-            connect();
-            return;
-        }
-        ws.send(JSON.stringify({ type: 'command', command: cmd }));
-    }, [connect, addOutput, t]);
+    }, [connected]);
 
     const sendInput = useCallback((data) => {
         const ws = wsRef.current;
@@ -149,14 +125,7 @@ export default function Terminal({ stackName, container }) {
         }
     }, []);
 
-    const handleComposeSubmit = (e) => {
-        e.preventDefault();
-        if (!command.trim() || isRunning) return;
-        sendCommand(command.trim());
-        setCommand('');
-    };
-
-    const handleContainerKeyDown = (e) => {
+    const handleKeyDown = (e) => {
         if (e.key === 'Enter') {
             e.preventDefault();
             sendInput(e.target.value + '\n');
@@ -169,53 +138,147 @@ export default function Terminal({ stackName, container }) {
     };
 
     const handleReconnect = () => {
-        addOutput({ type: 'system', data: 'Reconnecting...' });
+        setOutput([]);
+        setConnected(false);
         connect();
     };
 
-    const switchMode = (newMode) => {
+    const handleSelectContainer = (svc) => {
         if (wsRef.current) {
             wsRef.current.close();
             wsRef.current = null;
         }
         setOutput([]);
         setConnected(false);
-        setIsRunning(false);
-        setMode(newMode);
+        setSelectedContainer(svc);
     };
+
+    const handleShellChange = (newShell) => {
+        if (connected) {
+            if (wsRef.current) {
+                wsRef.current.close();
+                wsRef.current = null;
+            }
+            setOutput([]);
+            setConnected(false);
+        }
+        setShell(newShell);
+    };
+
+    const handleDisconnect = () => {
+        if (wsRef.current) {
+            wsRef.current.close();
+            wsRef.current = null;
+        }
+        setOutput([]);
+        setConnected(false);
+        setSelectedContainer(null);
+    };
+
+    if (!selectedContainer) {
+        return (
+            <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                    <h2 className="text-lg font-semibold text-text-primary">{t.terminal.title}</h2>
+                    <div className="flex items-center gap-2">
+                        <span className="text-xs text-text-muted">{t.terminal.selectShell}</span>
+                        <button
+                            onClick={() => handleShellChange('/bin/sh')}
+                            className={`btn-sm ${shell === '/bin/sh' ? 'btn-primary' : 'btn-secondary'}`}
+                        >
+                            sh
+                        </button>
+                        <button
+                            onClick={() => handleShellChange('/bin/bash')}
+                            className={`btn-sm ${shell === '/bin/bash' ? 'btn-primary' : 'btn-secondary'}`}
+                        >
+                            bash
+                        </button>
+                    </div>
+                </div>
+
+                {runningServices.length === 0 ? (
+                    <div className="card p-8 text-center">
+                        <Monitor size={32} className="text-text-muted mx-auto mb-3" />
+                        <p className="text-text-secondary">{t.terminal.noRunningServices || '没有运行中的服务'}</p>
+                        <p className="text-text-muted text-sm mt-1">{t.terminal.startServiceFirst || '请先启动服务后再进入容器终端'}</p>
+                    </div>
+                ) : (
+                    <div className="card overflow-hidden">
+                        <div className="px-5 py-3 bg-surface-200 dark:bg-surface-800 text-xs font-medium text-text-muted uppercase tracking-wider border-b border-border">
+                            {t.terminal.selectContainer || '选择一个运行中的服务进入容器终端'}
+                        </div>
+                        <div className="divide-y divide-border">
+                            {runningServices.map((svc) => (
+                                <button
+                                    key={svc.containerId}
+                                    onClick={() => handleSelectContainer(svc)}
+                                    className="w-full grid grid-cols-12 gap-4 px-5 py-3 items-center hover:bg-surface-100 dark:hover:bg-surface-800 transition-colors text-left"
+                                >
+                                    <div className="col-span-4 flex items-center gap-2.5">
+                                        <span className="w-2 h-2 rounded-full bg-success" />
+                                        <span className="text-text-primary font-medium text-sm">{svc.name}</span>
+                                    </div>
+                                    <div className="col-span-5 text-text-muted text-sm font-mono truncate">
+                                        {svc.image}
+                                    </div>
+                                    <div className="col-span-3 text-right">
+                                        <span className="btn-sm btn-primary">
+                                            <TerminalIcon size={13} />
+                                            {t.terminal.connect || '连接'}
+                                        </span>
+                                    </div>
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+                )}
+            </div>
+        );
+    }
 
     return (
         <div className="space-y-3">
-            <div className="flex items-center gap-2">
-                <button
-                    onClick={() => switchMode('container')}
-                    className={`btn-sm ${mode === 'container' ? 'btn-primary' : 'btn-secondary'}`}
-                >
-                    <Monitor size={13} />
-                    {t.terminal.containerMode}
-                </button>
-                <button
-                    onClick={() => switchMode('compose')}
-                    className={`btn-sm ${mode === 'compose' ? 'btn-primary' : 'btn-secondary'}`}
-                >
-                    <TerminalIcon size={13} />
-                    {t.terminal.composeMode}
-                </button>
+            <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                    <h2 className="text-lg font-semibold text-text-primary">{t.terminal.title}</h2>
+                    <span className="text-text-muted text-sm">
+                        {selectedContainer.name}
+                    </span>
+                </div>
+                <div className="flex items-center gap-2">
+                    <span className="text-xs text-text-muted">{t.terminal.selectShell}</span>
+                    <button
+                        onClick={() => handleShellChange('/bin/sh')}
+                        className={`btn-sm ${shell === '/bin/sh' ? 'btn-primary' : 'btn-secondary'}`}
+                    >
+                        sh
+                    </button>
+                    <button
+                        onClick={() => handleShellChange('/bin/bash')}
+                        className={`btn-sm ${shell === '/bin/bash' ? 'btn-primary' : 'btn-secondary'}`}
+                    >
+                        bash
+                    </button>
+                    <button
+                        onClick={handleDisconnect}
+                        className="btn-sm btn-secondary"
+                    >
+                        {t.terminal.disconnect || '断开'}
+                    </button>
+                </div>
             </div>
 
             <div className="card overflow-hidden">
                 <div className="bg-surface-200 dark:bg-surface-800 px-4 py-2 border-b border-border flex items-center justify-between">
                     <div className="flex items-center gap-2">
-                        <TerminalIcon size={14} className={connected ? (isRunning ? 'text-success animate-pulse' : 'text-success') : 'text-danger'} />
+                        <TerminalIcon size={14} className={connected ? 'text-success' : 'text-danger'} />
                         <span className="text-xs text-text-muted">
-                            {mode === 'container'
-                                ? `${container?.name || 'container'} / #`
-                                : `docker compose [${stackName}]`
-                            }
+                            {selectedContainer.name} • {shell.replace('/bin/', '')}
                         </span>
                     </div>
                     <div className="flex items-center gap-1">
-                        {(isRunning || (mode === 'container' && connected)) && (
+                        {connected && (
                             <button onClick={killProcess} className="btn-ghost btn-sm text-danger hover:bg-danger-light" title={t.common.cancel}>
                                 <XCircle size={12} />
                             </button>
@@ -236,26 +299,19 @@ export default function Terminal({ stackName, container }) {
                     style={{ height: '400px' }}
                 >
                     {output.length === 0 ? (
-                        <p className="text-text-muted">
-                            {mode === 'container'
-                                ? t.terminal.containerWaiting
-                                : t.terminal.waiting
-                            }
-                        </p>
+                        <p className="text-text-muted">{t.terminal.containerInput}</p>
                     ) : (
                         output.map((line, i) => (
                             <div
                                 key={i}
                                 className={`whitespace-pre-wrap break-all ${
-                                    line.type === 'input'
-                                        ? 'text-primary-600 dark:text-primary-400 font-bold'
-                                        : line.type === 'stderr'
-                                        ? 'text-warning-dark dark:text-warning'
-                                        : line.type === 'error'
-                                        ? 'text-danger'
-                                        : line.type === 'system'
-                                        ? 'text-text-muted italic'
-                                        : 'text-text-secondary'
+                                    line.type === 'stderr'
+                                    ? 'text-warning-dark dark:text-warning'
+                                    : line.type === 'error'
+                                    ? 'text-danger'
+                                    : line.type === 'system'
+                                    ? 'text-text-muted italic'
+                                    : 'text-text-secondary'
                                 }`}
                             >
                                 {line.data}
@@ -264,44 +320,18 @@ export default function Terminal({ stackName, container }) {
                     )}
                 </div>
 
-                {mode === 'compose' ? (
-                    <form
-                        onSubmit={handleComposeSubmit}
-                        className="border-t border-border flex items-center"
-                    >
-                        <span className="text-primary-600 dark:text-primary-400 font-mono text-sm px-3">$</span>
-                        <span className="text-text-muted font-mono text-xs">docker compose</span>
-                        <input
-                            type="text"
-                            value={command}
-                            onChange={(e) => setCommand(e.target.value)}
-                            className="flex-1 bg-transparent text-text-primary font-mono text-sm px-2 py-2.5 focus:outline-none"
-                            placeholder={isRunning ? '...' : t.terminal.placeholder}
-                            disabled={!connected}
-                            autoFocus
-                        />
-                        <button
-                            type="submit"
-                            disabled={isRunning || !command.trim() || !connected}
-                            className="px-3 py-2.5 text-text-muted hover:text-text-primary transition-colors disabled:opacity-50"
-                        >
-                            <Send size={14} />
-                        </button>
-                    </form>
-                ) : (
-                    <div className="border-t border-border flex items-center">
-                        <span className="text-success font-mono text-sm px-3">#</span>
-                        <input
-                            ref={inputRef}
-                            type="text"
-                            onKeyDown={handleContainerKeyDown}
-                            className="flex-1 bg-transparent text-text-primary font-mono text-sm px-2 py-2.5 focus:outline-none"
-                            placeholder={connected ? t.terminal.containerInput : '...'}
-                            disabled={!connected}
-                            autoFocus
-                        />
-                    </div>
-                )}
+                <div className="border-t border-border flex items-center">
+                    <span className="text-success font-mono text-sm px-3">#</span>
+                    <input
+                        ref={inputRef}
+                        type="text"
+                        onKeyDown={handleKeyDown}
+                        className="flex-1 bg-transparent text-text-primary font-mono text-sm px-2 py-2.5 focus:outline-none"
+                        placeholder={connected ? t.terminal.containerInput : '...'}
+                        disabled={!connected}
+                        autoFocus
+                    />
+                </div>
             </div>
         </div>
     );
