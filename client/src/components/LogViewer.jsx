@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useAuthStore } from '../store';
+import { useI18n } from '../i18n';
 import { Activity, Trash2, Pause, Play } from 'lucide-react';
 
 export default function LogViewer({ stackName, services, selectedService }) {
@@ -11,6 +12,7 @@ export default function LogViewer({ stackName, services, selectedService }) {
     const logsEndRef = useRef(null);
     const wsRef = useRef(null);
     const token = useAuthStore((s) => s.token);
+    const { t } = useI18n();
 
     const runningServices = services.filter((s) => s.containerId);
 
@@ -25,7 +27,7 @@ export default function LogViewer({ stackName, services, selectedService }) {
 
         const svc = services.find((s) => s.name === serviceName);
         if (!svc?.containerId) {
-            setLogs([{ type: 'system', data: 'Container not running. Start the service first.' }]);
+            setLogs([{ type: 'system', data: t.logs.containerNotRunning }]);
             return;
         }
 
@@ -39,7 +41,7 @@ export default function LogViewer({ stackName, services, selectedService }) {
         wsRef.current = ws;
 
         ws.onopen = () => {
-            setLogs((prev) => [...prev, { type: 'system', data: `Connected to ${serviceName} logs...` }]);
+            setLogs((prev) => [...prev, { type: 'system', data: t.logs.connected }]);
         };
 
         ws.onmessage = (event) => {
@@ -57,20 +59,20 @@ export default function LogViewer({ stackName, services, selectedService }) {
                     setLogs((prev) => [...prev, { type: 'error', data: msg.data }]);
                 } else if (msg.type === 'end') {
                     setIsStreaming(false);
-                    setLogs((prev) => [...prev, { type: 'system', data: 'Log stream ended.' }]);
+                    setLogs((prev) => [...prev, { type: 'system', data: t.logs.disconnected }]);
                 }
             } catch {}
         };
 
         ws.onerror = () => {
             setIsStreaming(false);
-            setLogs((prev) => [...prev, { type: 'error', data: 'Connection error' }]);
+            setLogs((prev) => [...prev, { type: 'error', data: t.logs.connectionError }]);
         };
 
         ws.onclose = () => {
             setIsStreaming(false);
         };
-    }, [services, tailLines, token]);
+    }, [services, tailLines, token, t]);
 
     useEffect(() => {
         if (selectedSvc) {
@@ -113,7 +115,7 @@ export default function LogViewer({ stackName, services, selectedService }) {
                         onChange={(e) => setSelectedSvc(e.target.value)}
                         className="input max-w-xs text-sm"
                     >
-                        <option value="">Select a service...</option>
+                        <option value="">{t.logs.selectService}</option>
                         {runningServices.map((svc) => (
                             <option key={svc.name} value={svc.name}>
                                 {svc.name}
@@ -126,11 +128,11 @@ export default function LogViewer({ stackName, services, selectedService }) {
                         onChange={(e) => setTailLines(parseInt(e.target.value))}
                         className="input max-w-[120px] text-sm"
                     >
-                        <option value={50}>Last 50</option>
-                        <option value={100}>Last 100</option>
-                        <option value={200}>Last 200</option>
-                        <option value={500}>Last 500</option>
-                        <option value={1000}>Last 1000</option>
+                        <option value={50}>50</option>
+                        <option value={100}>100</option>
+                        <option value={200}>200</option>
+                        <option value={500}>500</option>
+                        <option value={1000}>1000</option>
                     </select>
                 </div>
 
@@ -141,44 +143,44 @@ export default function LogViewer({ stackName, services, selectedService }) {
                     >
                         {isStreaming ? (
                             <>
-                                <Pause size={13} /> Pause
+                                <Pause size={13} /> {t.logs.pause}
                             </>
                         ) : (
                             <>
-                                <Play size={13} /> Stream
+                                <Play size={13} /> {t.logs.stream}
                             </>
                         )}
                     </button>
                     <button onClick={handleClear} className="btn-secondary btn-sm">
                         <Trash2 size={13} />
-                        Clear
+                        {t.common.clear}
                     </button>
-                    <label className="flex items-center gap-1.5 text-xs text-dark-400 cursor-pointer">
+                    <label className="flex items-center gap-1.5 text-xs text-text-muted cursor-pointer">
                         <input
                             type="checkbox"
                             checked={autoScroll}
                             onChange={(e) => setAutoScroll(e.target.checked)}
-                            className="rounded border-dark-600 bg-dark-800 text-primary-500 focus:ring-primary-500/50"
+                            className="rounded border-border bg-surface-100 dark:bg-surface-800 text-primary-500 focus:ring-primary-500/50"
                         />
-                        Auto-scroll
+                        {t.logs.autoScroll}
                     </label>
                 </div>
             </div>
 
             <div className="card overflow-hidden">
-                <div className="bg-dark-800/50 px-4 py-2 border-b border-dark-700/50 flex items-center gap-2">
-                    <Activity size={14} className={isStreaming ? 'text-emerald-400 animate-pulse' : 'text-dark-500'} />
-                    <span className="text-xs text-dark-400">
-                        {selectedSvc ? `${selectedSvc} - ${logs.length} lines` : 'No service selected'}
+                <div className="bg-surface-200 dark:bg-surface-800 px-4 py-2 border-b border-border flex items-center gap-2">
+                    <Activity size={14} className={isStreaming ? 'text-success animate-pulse' : 'text-text-muted'} />
+                    <span className="text-xs text-text-muted">
+                        {selectedSvc ? `${selectedSvc} - ${logs.length} ${t.stack.services}` : t.logs.selectServiceHint}
                     </span>
                 </div>
                 <div
-                    className="bg-dark-950 p-4 font-mono text-xs leading-relaxed overflow-auto"
+                    className="bg-surface-50 dark:bg-surface-950 p-4 font-mono text-xs leading-relaxed overflow-auto"
                     style={{ height: '500px' }}
                 >
                     {logs.length === 0 ? (
-                        <p className="text-dark-600">
-                            {selectedSvc ? 'Waiting for logs...' : 'Select a service to view logs'}
+                        <p className="text-text-muted">
+                            {selectedSvc ? t.logs.waiting : t.logs.selectServiceHint}
                         </p>
                     ) : (
                         logs.map((log, i) => (
@@ -186,10 +188,10 @@ export default function LogViewer({ stackName, services, selectedService }) {
                                 key={i}
                                 className={`whitespace-pre-wrap break-all ${
                                     log.type === 'stderr' || log.type === 'error'
-                                        ? 'text-red-400'
+                                        ? 'text-danger'
                                         : log.type === 'system'
-                                        ? 'text-dark-500 italic'
-                                        : 'text-dark-200'
+                                        ? 'text-text-muted italic'
+                                        : 'text-text-secondary'
                                 }`}
                             >
                                 {log.data}

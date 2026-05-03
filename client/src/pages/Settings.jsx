@@ -1,10 +1,12 @@
 import { useState } from 'react';
 import { useAuthStore, useSystemStore } from '../store';
-import { Shield, Key, Server, RefreshCw, Save } from 'lucide-react';
+import { useI18n } from '../i18n';
+import { Shield, Key, Server, RefreshCw } from 'lucide-react';
 
 export default function Settings() {
     const { user, changePassword } = useAuthStore();
     const { info, fetchSystemInfo } = useSystemStore();
+    const { t } = useI18n();
     const [currentPassword, setCurrentPassword] = useState('');
     const [newPassword, setNewPassword] = useState('');
     const [confirmPassword, setConfirmPassword] = useState('');
@@ -18,19 +20,19 @@ export default function Settings() {
         setMessage(null);
 
         if (newPassword !== confirmPassword) {
-            setError('Passwords do not match');
+            setError(t.auth.passwordMismatch);
             return;
         }
 
         if (newPassword.length < 4) {
-            setError('Password must be at least 4 characters');
+            setError(t.auth.passwordTooShort);
             return;
         }
 
         setSaving(true);
         try {
             await changePassword(currentPassword, newPassword);
-            setMessage('Password changed successfully');
+            setMessage(t.auth.passwordChanged);
             setCurrentPassword('');
             setNewPassword('');
             setConfirmPassword('');
@@ -44,68 +46,71 @@ export default function Settings() {
     return (
         <div className="space-y-6 max-w-2xl">
             <div>
-                <h1 className="text-2xl font-bold text-white">Settings</h1>
-                <p className="text-dark-400 text-sm mt-1">Manage your Mikus instance</p>
+                <h1 className="text-2xl font-bold text-text-primary">{t.common.settings}</h1>
+                <p className="text-text-muted text-sm mt-1">{t.settings.subtitle}</p>
             </div>
 
             <div className="card p-5">
                 <div className="flex items-center gap-3 mb-4">
-                    <div className="w-10 h-10 bg-primary-500/15 rounded-lg flex items-center justify-center">
-                        <Shield size={20} className="text-primary-400" />
+                    <div className="w-10 h-10 bg-primary-100 dark:bg-primary-500/15 rounded-lg flex items-center justify-center">
+                        <Shield size={20} className="text-primary-600 dark:text-primary-400" />
                     </div>
                     <div>
-                        <h2 className="text-white font-semibold">Account</h2>
-                        <p className="text-dark-400 text-sm">Logged in as {user?.username || 'admin'}</p>
+                        <h2 className="text-text-primary font-semibold">{t.settings.account}</h2>
+                        <p className="text-text-muted text-sm">{t.settings.loggedInAs.replace('{username}', user?.username || 'admin')}</p>
                     </div>
                 </div>
 
                 <form onSubmit={handleChangePassword} className="space-y-4">
                     {error && (
-                        <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-3 text-red-400 text-sm">
+                        <div className="bg-danger-light border border-danger/30 rounded-lg p-3 text-danger-dark dark:text-danger text-sm">
                             {error}
                         </div>
                     )}
                     {message && (
-                        <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-lg p-3 text-emerald-400 text-sm">
+                        <div className="bg-success-light border border-success/30 rounded-lg p-3 text-success-dark dark:text-success text-sm">
                             {message}
                         </div>
                     )}
 
                     <div>
-                        <label className="block text-sm font-medium text-dark-300 mb-1.5">
-                            Current Password
+                        <label className="block text-sm font-medium text-text-secondary mb-1.5">
+                            {t.auth.currentPassword}
                         </label>
                         <input
                             type="password"
                             value={currentPassword}
                             onChange={(e) => setCurrentPassword(e.target.value)}
                             className="input"
+                            placeholder={t.auth.currentPasswordPlaceholder}
                             required
                         />
                     </div>
 
                     <div>
-                        <label className="block text-sm font-medium text-dark-300 mb-1.5">
-                            New Password
+                        <label className="block text-sm font-medium text-text-secondary mb-1.5">
+                            {t.auth.newPassword}
                         </label>
                         <input
                             type="password"
                             value={newPassword}
                             onChange={(e) => setNewPassword(e.target.value)}
                             className="input"
+                            placeholder={t.auth.newPasswordPlaceholder}
                             required
                         />
                     </div>
 
                     <div>
-                        <label className="block text-sm font-medium text-dark-300 mb-1.5">
-                            Confirm New Password
+                        <label className="block text-sm font-medium text-text-secondary mb-1.5">
+                            {t.auth.confirmNewPassword}
                         </label>
                         <input
                             type="password"
                             value={confirmPassword}
                             onChange={(e) => setConfirmPassword(e.target.value)}
                             className="input"
+                            placeholder={t.auth.confirmPasswordPlaceholder}
                             required
                         />
                     </div>
@@ -116,7 +121,7 @@ export default function Settings() {
                         className="btn-primary"
                     >
                         <Key size={16} />
-                        {saving ? 'Changing...' : 'Change Password'}
+                        {saving ? t.common.loading : t.auth.changePassword}
                     </button>
                 </form>
             </div>
@@ -124,12 +129,12 @@ export default function Settings() {
             <div className="card p-5">
                 <div className="flex items-center justify-between mb-4">
                     <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 bg-emerald-500/15 rounded-lg flex items-center justify-center">
-                            <Server size={20} className="text-emerald-400" />
+                        <div className="w-10 h-10 bg-success-light rounded-lg flex items-center justify-center">
+                            <Server size={20} className="text-success-dark dark:text-success" />
                         </div>
                         <div>
-                            <h2 className="text-white font-semibold">Docker System</h2>
-                            <p className="text-dark-400 text-sm">Docker engine information</p>
+                            <h2 className="text-text-primary font-semibold">{t.settings.dockerSystem}</h2>
+                            <p className="text-text-muted text-sm">{t.settings.dockerInfo}</p>
                         </div>
                     </div>
                     <button
@@ -137,22 +142,22 @@ export default function Settings() {
                         className="btn-secondary btn-sm"
                     >
                         <RefreshCw size={14} />
-                        Refresh
+                        {t.common.refresh}
                     </button>
                 </div>
 
                 {info ? (
                     <div className="grid grid-cols-2 gap-3">
-                        <InfoItem label="Server Version" value={info.serverVersion} />
-                        <InfoItem label="API Version" value={info.apiVersion} />
-                        <InfoItem label="OS" value={info.operatingSystem} />
-                        <InfoItem label="CPU Cores" value={info.cpuCores} />
-                        <InfoItem label="Total Memory" value={formatBytes(info.totalMemory)} />
-                        <InfoItem label="Containers" value={`${info.containersRunning || 0} running / ${info.containers || 0} total`} />
-                        <InfoItem label="Images" value={info.images} />
+                        <InfoItem label={t.settings.serverVersion} value={info.serverVersion} />
+                        <InfoItem label={t.settings.apiVersion} value={info.apiVersion} />
+                        <InfoItem label={t.settings.operatingSystem} value={info.operatingSystem} />
+                        <InfoItem label={t.dashboard.cpuCores} value={info.cpuCores} />
+                        <InfoItem label={t.settings.totalMemory} value={formatBytes(info.totalMemory)} />
+                        <InfoItem label={t.settings.containers} value={t.settings.containersRunning.replace('{running}', info.containersRunning || 0).replace('{total}', info.containers || 0)} />
+                        <InfoItem label={t.settings.images} value={info.images} />
                     </div>
                 ) : (
-                    <p className="text-dark-500 text-sm">Loading system info...</p>
+                    <p className="text-text-muted text-sm">{t.common.loading}</p>
                 )}
             </div>
         </div>
@@ -161,9 +166,9 @@ export default function Settings() {
 
 function InfoItem({ label, value }) {
     return (
-        <div className="bg-dark-800/50 rounded-lg p-3">
-            <p className="text-dark-500 text-xs mb-0.5">{label}</p>
-            <p className="text-white text-sm font-medium truncate">{value || '-'}</p>
+        <div className="bg-surface-100 dark:bg-surface-800 rounded-lg p-3">
+            <p className="text-text-muted text-xs mb-0.5">{label}</p>
+            <p className="text-text-primary text-sm font-medium truncate">{value || '-'}</p>
         </div>
     );
 }

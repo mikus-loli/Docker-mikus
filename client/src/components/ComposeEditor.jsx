@@ -1,9 +1,11 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useStackStore } from '../store';
-import { Save, RotateCw, FileCode, FileText } from 'lucide-react';
+import { useI18n } from '../i18n';
+import { Save, FileCode, FileText } from 'lucide-react';
 
 export default function ComposeEditor({ stackName, composeData, onLoad }) {
     const { updateStack } = useStackStore();
+    const { t } = useI18n();
     const [compose, setCompose] = useState('');
     const [env, setEnv] = useState('');
     const [saving, setSaving] = useState(false);
@@ -46,13 +48,13 @@ export default function ComposeEditor({ stackName, composeData, onLoad }) {
     return (
         <div className="space-y-3">
             <div className="flex items-center justify-between">
-                <div className="flex items-center gap-1 bg-dark-800 rounded-lg border border-dark-600 p-0.5">
+                <div className="flex items-center gap-1 bg-surface-200 dark:bg-surface-800 rounded-lg border border-border p-0.5">
                     <button
                         onClick={() => setActiveFile('compose')}
                         className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
                             activeFile === 'compose'
-                                ? 'bg-dark-600 text-white'
-                                : 'text-dark-400 hover:text-white'
+                                ? 'bg-surface-400 dark:bg-surface-600 text-text-primary'
+                                : 'text-text-muted hover:text-text-primary'
                         }`}
                     >
                         <FileCode size={12} />
@@ -62,8 +64,8 @@ export default function ComposeEditor({ stackName, composeData, onLoad }) {
                         onClick={() => setActiveFile('env')}
                         className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
                             activeFile === 'env'
-                                ? 'bg-dark-600 text-white'
-                                : 'text-dark-400 hover:text-white'
+                                ? 'bg-surface-400 dark:bg-surface-600 text-text-primary'
+                                : 'text-text-muted hover:text-text-primary'
                         }`}
                     >
                         <FileText size={12} />
@@ -73,10 +75,10 @@ export default function ComposeEditor({ stackName, composeData, onLoad }) {
 
                 <div className="flex items-center gap-2">
                     {error && (
-                        <span className="text-red-400 text-xs">{error}</span>
+                        <span className="text-danger text-xs">{error}</span>
                     )}
                     {saved && (
-                        <span className="text-emerald-400 text-xs">Saved!</span>
+                        <span className="text-success-dark dark:text-success text-xs">{t.stack.saved}</span>
                     )}
                     <button
                         onClick={handleSave}
@@ -84,7 +86,7 @@ export default function ComposeEditor({ stackName, composeData, onLoad }) {
                         className="btn-primary btn-sm"
                     >
                         <Save size={13} />
-                        {saving ? 'Saving...' : 'Save'}
+                        {saving ? t.stack.saving : t.common.save}
                     </button>
                 </div>
             </div>
@@ -93,14 +95,14 @@ export default function ComposeEditor({ stackName, composeData, onLoad }) {
                 {activeFile === 'compose' ? (
                     <div className="relative">
                         <div className="absolute top-0 right-0 p-2 z-10">
-                            <span className="text-[10px] text-dark-500 bg-dark-800 px-2 py-1 rounded">
-                                Ctrl+S to save
+                            <span className="text-[10px] text-text-muted bg-surface-200 dark:bg-surface-700 px-2 py-1 rounded">
+                                {t.stack.ctrlSToSave}
                             </span>
                         </div>
                         <textarea
                             value={compose}
                             onChange={(e) => setCompose(e.target.value)}
-                            className="w-full bg-dark-950 text-green-400 font-mono text-sm p-4 min-h-[500px] resize-y focus:outline-none leading-relaxed"
+                            className="w-full bg-surface-50 dark:bg-surface-950 text-success-dark dark:text-success font-mono text-sm p-4 min-h-[500px] resize-y focus:outline-none leading-relaxed"
                             spellCheck={false}
                         />
                     </div>
@@ -108,8 +110,8 @@ export default function ComposeEditor({ stackName, composeData, onLoad }) {
                     <textarea
                         value={env}
                         onChange={(e) => setEnv(e.target.value)}
-                        className="w-full bg-dark-950 text-amber-400 font-mono text-sm p-4 min-h-[500px] resize-y focus:outline-none leading-relaxed"
-                        placeholder="# Environment variables"
+                        className="w-full bg-surface-50 dark:bg-surface-950 text-warning-dark dark:text-warning font-mono text-sm p-4 min-h-[500px] resize-y focus:outline-none leading-relaxed"
+                        placeholder={t.stack.envFilePlaceholder}
                         spellCheck={false}
                     />
                 )}

@@ -2,10 +2,114 @@
 @tailwind components;
 @tailwind utilities;
 
+:root {
+    --primary-50: #eff6ff;
+    --primary-100: #dbeafe;
+    --primary-200: #bfdbfe;
+    --primary-300: #93c5fd;
+    --primary-400: #60a5fa;
+    --primary-500: #3b82f6;
+    --primary-600: #2563eb;
+    --primary-700: #1d4ed8;
+    --primary-800: #1e40af;
+    --primary-900: #1e3a8a;
+    --primary-950: #172554;
+
+    --surface: #ffffff;
+    --surface-50: #f8fafc;
+    --surface-100: #f1f5f9;
+    --surface-200: #e2e8f0;
+    --surface-300: #cbd5e1;
+    --surface-400: #94a3b8;
+    --surface-500: #64748b;
+    --surface-600: #475569;
+    --surface-700: #334155;
+    --surface-800: #1e293b;
+    --surface-900: #0f172a;
+    --surface-950: #020617;
+
+    --text-primary: #0f172a;
+    --text-secondary: #475569;
+    --text-muted: #94a3b8;
+    --text-inverse: #ffffff;
+
+    --border: #e2e8f0;
+    --border-muted: #f1f5f9;
+
+    --success: #10b981;
+    --success-light: #d1fae5;
+    --success-dark: #059669;
+
+    --warning: #f59e0b;
+    --warning-light: #fef3c7;
+    --warning-dark: #d97706;
+
+    --danger: #ef4444;
+    --danger-light: #fee2e2;
+    --danger-dark: #dc2626;
+
+    --shadow-primary: 0 10px 15px -3px rgba(37, 99, 235, 0.25);
+    --shadow-success: 0 10px 15px -3px rgba(16, 185, 129, 0.25);
+    --shadow-warning: 0 10px 15px -3px rgba(245, 158, 11, 0.25);
+    --shadow-danger: 0 10px 15px -3px rgba(239, 68, 68, 0.25);
+}
+
+.dark {
+    --primary-50: #eff6ff;
+    --primary-100: #dbeafe;
+    --primary-200: #bfdbfe;
+    --primary-300: #93c5fd;
+    --primary-400: #60a5fa;
+    --primary-500: #3b82f6;
+    --primary-600: #2563eb;
+    --primary-700: #1d4ed8;
+    --primary-800: #1e40af;
+    --primary-900: #1e3a8a;
+    --primary-950: #172554;
+
+    --surface: #0f172a;
+    --surface-50: #f8fafc;
+    --surface-100: #f1f5f9;
+    --surface-200: #e2e8f0;
+    --surface-300: #cbd5e1;
+    --surface-400: #94a3b8;
+    --surface-500: #64748b;
+    --surface-600: #475569;
+    --surface-700: #334155;
+    --surface-800: #1e293b;
+    --surface-900: #0f172a;
+    --surface-950: #020617;
+
+    --text-primary: #f1f5f9;
+    --text-secondary: #94a3b8;
+    --text-muted: #64748b;
+    --text-inverse: #0f172a;
+
+    --border: #334155;
+    --border-muted: #1e293b;
+
+    --success: #34d399;
+    --success-light: rgba(16, 185, 129, 0.15);
+    --success-dark: #10b981;
+
+    --warning: #fbbf24;
+    --warning-light: rgba(245, 158, 11, 0.15);
+    --warning-dark: #f59e0b;
+
+    --danger: #f87171;
+    --danger-light: rgba(239, 68, 68, 0.15);
+    --danger-dark: #ef4444;
+
+    --shadow-primary: 0 10px 15px -3px rgba(59, 130, 246, 0.25);
+    --shadow-success: 0 10px 15px -3px rgba(52, 211, 153, 0.25);
+    --shadow-warning: 0 10px 15px -3px rgba(251, 191, 36, 0.25);
+    --shadow-danger: 0 10px 15px -3px rgba(248, 113, 113, 0.25);
+}
+
 @layer base {
     * {
         scrollbar-width: thin;
-        scrollbar-color: #334155 transparent;
+        scrollbar-color: var(--surface-400) transparent;
     }
 
     *::-webkit-scrollbar {
@@ -18,16 +122,18 @@
     }
 
     *::-webkit-scrollbar-thumb {
-        background: #334155;
+        background: var(--surface-400);
         border-radius: 3px;
     }
 
     *::-webkit-scrollbar-thumb:hover {
-        background: #475569;
+        background: var(--surface-500);
     }
 
     body {
         font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+        background-color: var(--surface);
+        color: var(--text-primary);
     }
 }
 
@@ -37,27 +143,31 @@
     }
 
     .btn-primary {
-        @apply btn bg-primary-600 hover:bg-primary-700 text-white shadow-lg shadow-primary-600/25;
+        @apply btn bg-primary-600 hover:bg-primary-700 text-white;
+        box-shadow: var(--shadow-primary);
     }
 
     .btn-secondary {
-        @apply btn bg-dark-700 hover:bg-dark-600 text-dark-200 border border-dark-600;
+        @apply btn bg-surface-200 hover:bg-surface-300 text-surface-700 border border-border dark:bg-surface-700 dark:hover:bg-surface-600 dark:text-surface-200 dark:border-surface-600;
     }
 
     .btn-danger {
-        @apply btn bg-red-600 hover:bg-red-700 text-white shadow-lg shadow-red-600/25;
+        @apply btn bg-danger hover:bg-danger-dark text-white;
+        box-shadow: var(--shadow-danger);
     }
 
     .btn-success {
-        @apply btn bg-emerald-600 hover:bg-emerald-700 text-white shadow-lg shadow-emerald-600/25;
+        @apply btn bg-success hover:bg-success-dark text-white;
+        box-shadow: var(--shadow-success);
     }
 
     .btn-warning {
-        @apply btn bg-amber-600 hover:bg-amber-700 text-white shadow-lg shadow-amber-600/25;
+        @apply btn bg-warning hover:bg-warning-dark text-white;
+        box-shadow: var(--shadow-warning);
     }
 
     .btn-ghost {
-        @apply btn hover:bg-dark-800 text-dark-300 hover:text-white;
+        @apply btn hover:bg-surface-200 dark:hover:bg-surface-700 text-surface-500 dark:text-surface-400 hover:text-surface-700 dark:hover:text-surface-200;
     }
 
     .btn-sm {
@@ -69,15 +179,15 @@
     }
 
     .card {
-        @apply bg-dark-900 border border-dark-700/50 rounded-xl;
+        @apply bg-surface border border-border rounded-xl;
     }
 
     .card-hover {
-        @apply card hover:border-dark-600 transition-all duration-200;
+        @apply card hover:border-surface-400 transition-all duration-200;
     }
 
     .input {
-        @apply w-full bg-dark-800 border border-dark-600 rounded-lg px-3 py-2 text-white placeholder-dark-400 focus:outline-none focus:ring-2 focus:ring-primary-500/50 focus:border-primary-500 transition-all duration-200;
+        @apply w-full bg-surface-100 dark:bg-surface-800 border border-border rounded-lg px-3 py-2 text-text-primary placeholder-text-muted focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition-all duration-200;
     }
 
     .badge {
@@ -85,23 +195,35 @@
     }
 
     .badge-running {
-        @apply badge bg-emerald-500/15 text-emerald-400 border border-emerald-500/30;
+        @apply badge;
+        background-color: var(--success-light);
+        color: var(--success-dark);
+        border: 1px solid var(--success);
     }
 
     .badge-stopped {
-        @apply badge bg-red-500/15 text-red-400 border border-red-500/30;
+        @apply badge;
+        background-color: var(--danger-light);
+        color: var(--danger-dark);
+        border: 1px solid var(--danger);
     }
 
     .badge-partial {
-        @apply badge bg-amber-500/15 text-amber-400 border border-amber-500/30;
+        @apply badge;
+        background-color: var(--warning-light);
+        color: var(--warning-dark);
+        border: 1px solid var(--warning);
     }
 
     .badge-inactive {
-        @apply badge bg-dark-500/15 text-dark-400 border border-dark-500/30;
+        @apply badge bg-surface-200 dark:bg-surface-700 text-surface-500 dark:text-surface-400 border border-surface-300 dark:border-surface-600;
     }
 
     .badge-error {
-        @apply badge bg-red-500/15 text-red-400 border border-red-500/30;
+        @apply badge;
+        background-color: var(--danger-light);
+        color: var(--danger-dark);
+        border: 1px solid var(--danger);
     }
 
     .status-dot {
@@ -109,23 +231,41 @@
     }
 
     .status-dot-running {
-        @apply status-dot bg-emerald-400 shadow-lg shadow-emerald-400/50;
+        @apply status-dot bg-success;
+        box-shadow: 0 0 8px var(--success);
     }
 
     .status-dot-stopped {
-        @apply status-dot bg-red-400;
+        @apply status-dot bg-danger;
     }
 
     .status-dot-partial {
-        @apply status-dot bg-amber-400 shadow-lg shadow-amber-400/50;
+        @apply status-dot bg-warning;
+        box-shadow: 0 0 8px var(--warning);
     }
 
     .status-dot-inactive {
-        @apply status-dot bg-dark-500;
+        @apply status-dot bg-surface-400;
     }
 
     .terminal-output {
         @apply font-mono text-sm leading-relaxed;
+    }
+
+    .sidebar {
+        @apply bg-surface border-r border-border;
+    }
+
+    .sidebar-item {
+        @apply flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200;
+    }
+
+    .sidebar-item-active {
+        @apply bg-primary-100 dark:bg-primary-600 text-primary-700 dark:text-primary-300 border border-primary-200 dark:border-primary-500;
+    }
+
+    .sidebar-item-inactive {
+        @apply text-surface-500 dark:text-surface-400 hover:bg-surface-200 dark:hover:bg-surface-700 hover:text-surface-700 dark:hover:text-surface-200;
     }
 }
 

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useStackStore, useSystemStore } from '../store';
+import { useI18n } from '../i18n';
 import StackCard from '../components/StackCard';
 import {
     Plus,
@@ -10,13 +11,13 @@ import {
     List,
     Server,
     Cpu,
-    HardDrive,
     Activity,
 } from 'lucide-react';
 
 export default function Dashboard() {
     const { stacks, fetchStacks, loading } = useStackStore();
     const { info, fetchSystemInfo } = useSystemStore();
+    const { t } = useI18n();
     const navigate = useNavigate();
     const [search, setSearch] = useState('');
     const [viewMode, setViewMode] = useState('grid');
@@ -40,8 +41,8 @@ export default function Dashboard() {
         <div className="space-y-6">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div>
-                    <h1 className="text-2xl font-bold text-white">Dashboard</h1>
-                    <p className="text-dark-400 text-sm mt-1">Manage your Docker Compose stacks</p>
+                    <h1 className="text-2xl font-bold text-text-primary">{t.dashboard.title}</h1>
+                    <p className="text-text-muted text-sm mt-1">{t.dashboard.subtitle}</p>
                 </div>
                 <div className="flex items-center gap-2">
                     <button
@@ -50,14 +51,14 @@ export default function Dashboard() {
                         disabled={loading}
                     >
                         <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
-                        Refresh
+                        {t.common.refresh}
                     </button>
                     <button
                         onClick={() => navigate('/stack/new')}
                         className="btn-primary btn-sm"
                     >
                         <Plus size={14} />
-                        New Stack
+                        {t.dashboard.newStack}
                     </button>
                 </div>
             </div>
@@ -65,48 +66,48 @@ export default function Dashboard() {
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                 <div className="card p-4">
                     <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 bg-primary-500/15 rounded-lg flex items-center justify-center">
-                            <LayoutGrid size={20} className="text-primary-400" />
+                        <div className="w-10 h-10 bg-primary-100 dark:bg-primary-500/15 rounded-lg flex items-center justify-center">
+                            <LayoutGrid size={20} className="text-primary-600 dark:text-primary-400" />
                         </div>
                         <div>
-                            <p className="text-dark-400 text-xs">Stacks</p>
-                            <p className="text-xl font-bold text-white">{stacks.length}</p>
+                            <p className="text-text-muted text-xs">{t.dashboard.stacks}</p>
+                            <p className="text-xl font-bold text-text-primary">{stacks.length}</p>
                         </div>
                     </div>
                 </div>
 
                 <div className="card p-4">
                     <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 bg-emerald-500/15 rounded-lg flex items-center justify-center">
-                            <Activity size={20} className="text-emerald-400" />
+                        <div className="w-10 h-10 bg-success-light rounded-lg flex items-center justify-center">
+                            <Activity size={20} className="text-success-dark dark:text-success" />
                         </div>
                         <div>
-                            <p className="text-dark-400 text-xs">Running</p>
-                            <p className="text-xl font-bold text-white">{runningStacks}</p>
+                            <p className="text-text-muted text-xs">{t.dashboard.running}</p>
+                            <p className="text-xl font-bold text-text-primary">{runningStacks}</p>
                         </div>
                     </div>
                 </div>
 
                 <div className="card p-4">
                     <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 bg-purple-500/15 rounded-lg flex items-center justify-center">
-                            <Server size={20} className="text-purple-400" />
+                        <div className="w-10 h-10 bg-purple-100 dark:bg-purple-500/15 rounded-lg flex items-center justify-center">
+                            <Server size={20} className="text-purple-600 dark:text-purple-400" />
                         </div>
                         <div>
-                            <p className="text-dark-400 text-xs">Services</p>
-                            <p className="text-xl font-bold text-white">{runningServices}/{totalServices}</p>
+                            <p className="text-text-muted text-xs">{t.dashboard.services}</p>
+                            <p className="text-xl font-bold text-text-primary">{runningServices}/{totalServices}</p>
                         </div>
                     </div>
                 </div>
 
                 <div className="card p-4">
                     <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 bg-amber-500/15 rounded-lg flex items-center justify-center">
-                            <Cpu size={20} className="text-amber-400" />
+                        <div className="w-10 h-10 bg-warning-light rounded-lg flex items-center justify-center">
+                            <Cpu size={20} className="text-warning-dark dark:text-warning" />
                         </div>
                         <div>
-                            <p className="text-dark-400 text-xs">CPU Cores</p>
-                            <p className="text-xl font-bold text-white">{info?.cpuCores || '-'}</p>
+                            <p className="text-text-muted text-xs">{t.dashboard.cpuCores}</p>
+                            <p className="text-xl font-bold text-text-primary">{info?.cpuCores || '-'}</p>
                         </div>
                     </div>
                 </div>
@@ -114,22 +115,22 @@ export default function Dashboard() {
 
             <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
                 <div className="relative flex-1 w-full">
-                    <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-dark-400" />
+                    <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" />
                     <input
                         type="text"
                         value={search}
                         onChange={(e) => setSearch(e.target.value)}
-                        placeholder="Search stacks..."
+                        placeholder={t.dashboard.searchPlaceholder}
                         className="input pl-9"
                     />
                 </div>
-                <div className="flex items-center bg-dark-800 rounded-lg border border-dark-600 p-0.5">
+                <div className="flex items-center bg-surface-200 dark:bg-surface-800 rounded-lg border border-border p-0.5">
                     <button
                         onClick={() => setViewMode('grid')}
                         className={`p-1.5 rounded-md transition-all ${
                             viewMode === 'grid'
-                                ? 'bg-dark-600 text-white'
-                                : 'text-dark-400 hover:text-white'
+                                ? 'bg-surface-400 dark:bg-surface-600 text-text-primary'
+                                : 'text-text-muted hover:text-text-primary'
                         }`}
                     >
                         <LayoutGrid size={16} />
@@ -138,8 +139,8 @@ export default function Dashboard() {
                         onClick={() => setViewMode('list')}
                         className={`p-1.5 rounded-md transition-all ${
                             viewMode === 'list'
-                                ? 'bg-dark-600 text-white'
-                                : 'text-dark-400 hover:text-white'
+                                ? 'bg-surface-400 dark:bg-surface-600 text-text-primary'
+                                : 'text-text-muted hover:text-text-primary'
                         }`}
                     >
                         <List size={16} />
@@ -149,16 +150,14 @@ export default function Dashboard() {
 
             {filteredStacks.length === 0 ? (
                 <div className="card p-12 text-center">
-                    <div className="w-16 h-16 bg-dark-800 rounded-2xl flex items-center justify-center mx-auto mb-4">
-                        <LayoutGrid size={28} className="text-dark-500" />
+                    <div className="w-16 h-16 bg-surface-200 dark:bg-surface-800 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                        <LayoutGrid size={28} className="text-text-muted" />
                     </div>
-                    <h3 className="text-lg font-medium text-dark-300 mb-1">
-                        {search ? 'No stacks found' : 'No stacks yet'}
+                    <h3 className="text-lg font-medium text-text-secondary mb-1">
+                        {search ? t.dashboard.noResults : t.dashboard.noStacks}
                     </h3>
-                    <p className="text-dark-500 text-sm mb-4">
-                        {search
-                            ? 'Try a different search term'
-                            : 'Create your first Docker Compose stack'}
+                    <p className="text-text-muted text-sm mb-4">
+                        {search ? t.dashboard.noResultsDesc : t.dashboard.noStacksDesc}
                     </p>
                     {!search && (
                         <button
@@ -166,7 +165,7 @@ export default function Dashboard() {
                             className="btn-primary"
                         >
                             <Plus size={16} />
-                            Create Stack
+                            {t.stack.createStack}
                         </button>
                     )}
                 </div>
@@ -178,12 +177,12 @@ export default function Dashboard() {
                 </div>
             ) : (
                 <div className="card overflow-hidden">
-                    <div className="grid grid-cols-12 gap-4 px-4 py-3 bg-dark-800/50 text-xs font-medium text-dark-400 uppercase tracking-wider border-b border-dark-700/50">
-                        <div className="col-span-4">Name</div>
-                        <div className="col-span-2">Status</div>
-                        <div className="col-span-2">Services</div>
-                        <div className="col-span-2">Running</div>
-                        <div className="col-span-2 text-right">Actions</div>
+                    <div className="grid grid-cols-12 gap-4 px-4 py-3 bg-surface-200 dark:bg-surface-800 text-xs font-medium text-text-muted uppercase tracking-wider border-b border-border">
+                        <div className="col-span-4">{t.common.name}</div>
+                        <div className="col-span-2">{t.common.status}</div>
+                        <div className="col-span-2">{t.stack.serviceCount}</div>
+                        <div className="col-span-2">{t.stack.runningCount}</div>
+                        <div className="col-span-2 text-right">{t.common.actions}</div>
                     </div>
                     {filteredStacks.map((stack) => (
                         <StackCard key={stack.name} stack={stack} viewMode="list" />

@@ -1,5 +1,7 @@
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 import { useAuthStore, useSystemStore } from '../store';
+import { useTheme } from '../theme';
+import { useI18n } from '../i18n';
 import { useEffect } from 'react';
 import {
     LayoutDashboard,
@@ -8,11 +10,16 @@ import {
     LogOut,
     Container,
     Server,
+    Sun,
+    Moon,
+    Languages,
 } from 'lucide-react';
 
 export default function Layout() {
     const { user, logout } = useAuthStore();
     const { info, fetchSystemInfo } = useSystemStore();
+    const { resolvedTheme, toggleTheme } = useTheme();
+    const { t, language, toggleLanguage } = useI18n();
     const navigate = useNavigate();
 
     useEffect(() => {
@@ -27,16 +34,16 @@ export default function Layout() {
     };
 
     return (
-        <div className="min-h-screen bg-dark-950 flex">
-            <aside className="w-64 bg-dark-900 border-r border-dark-700/50 flex flex-col fixed h-full z-30 lg:relative">
-                <div className="p-5 border-b border-dark-700/50">
+        <div className="min-h-screen bg-surface flex">
+            <aside className="w-64 sidebar flex flex-col fixed h-full z-30 lg:relative">
+                <div className="p-5 border-b border-border">
                     <div className="flex items-center gap-3">
                         <div className="w-9 h-9 bg-gradient-to-br from-primary-500 to-purple-600 rounded-lg flex items-center justify-center shadow-lg shadow-primary-500/25">
                             <Container size={20} className="text-white" />
                         </div>
                         <div>
-                            <h1 className="text-lg font-bold text-white tracking-tight">Mikus</h1>
-                            <p className="text-[10px] text-dark-400 uppercase tracking-widest">Stack Manager</p>
+                            <h1 className="text-lg font-bold text-text-primary tracking-tight">Mikus</h1>
+                            <p className="text-[10px] text-text-muted uppercase tracking-widest">{t.auth.loginSubtitle}</p>
                         </div>
                     </div>
                 </div>
@@ -46,79 +53,84 @@ export default function Layout() {
                         to="/"
                         end
                         className={({ isActive }) =>
-                            `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 ${
-                                isActive
-                                    ? 'bg-primary-600/15 text-primary-400 border border-primary-500/30'
-                                    : 'text-dark-300 hover:bg-dark-800 hover:text-white'
-                            }`
+                            `sidebar-item ${isActive ? 'sidebar-item-active' : 'sidebar-item-inactive'}`
                         }
                     >
                         <LayoutDashboard size={18} />
-                        Dashboard
+                        {t.dashboard.title}
                     </NavLink>
 
                     <NavLink
                         to="/stack/new"
                         className={({ isActive }) =>
-                            `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 ${
-                                isActive
-                                    ? 'bg-primary-600/15 text-primary-400 border border-primary-500/30'
-                                    : 'text-dark-300 hover:bg-dark-800 hover:text-white'
-                            }`
+                            `sidebar-item ${isActive ? 'sidebar-item-active' : 'sidebar-item-inactive'}`
                         }
                     >
                         <Plus size={18} />
-                        New Stack
+                        {t.stack.newStack}
                     </NavLink>
 
                     <NavLink
                         to="/settings"
                         className={({ isActive }) =>
-                            `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 ${
-                                isActive
-                                    ? 'bg-primary-600/15 text-primary-400 border border-primary-500/30'
-                                    : 'text-dark-300 hover:bg-dark-800 hover:text-white'
-                            }`
+                            `sidebar-item ${isActive ? 'sidebar-item-active' : 'sidebar-item-inactive'}`
                         }
                     >
                         <Settings size={18} />
-                        Settings
+                        {t.common.settings}
                     </NavLink>
                 </nav>
 
                 {info && (
-                    <div className="p-4 border-t border-dark-700/50">
-                        <div className="bg-dark-800/50 rounded-lg p-3 space-y-2">
-                            <div className="flex items-center gap-2 text-dark-400 text-xs">
+                    <div className="p-4 border-t border-border">
+                        <div className="bg-surface-100 dark:bg-surface-800 rounded-lg p-3 space-y-2">
+                            <div className="flex items-center gap-2 text-text-muted text-xs">
                                 <Server size={12} />
-                                <span>System</span>
+                                <span>Docker</span>
                             </div>
                             <div className="grid grid-cols-2 gap-2 text-xs">
                                 <div>
-                                    <span className="text-dark-500">Containers</span>
-                                    <p className="text-white font-medium">{info.containersRunning || 0}/{info.containers || 0}</p>
+                                    <span className="text-text-muted">{t.settings.containers}</span>
+                                    <p className="text-text-primary font-medium">{info.containersRunning || 0}/{info.containers || 0}</p>
                                 </div>
                                 <div>
-                                    <span className="text-dark-500">Images</span>
-                                    <p className="text-white font-medium">{info.images || 0}</p>
+                                    <span className="text-text-muted">{t.settings.images}</span>
+                                    <p className="text-text-primary font-medium">{info.images || 0}</p>
                                 </div>
                             </div>
                         </div>
                     </div>
                 )}
 
-                <div className="p-3 border-t border-dark-700/50">
+                <div className="p-3 border-t border-border space-y-2">
+                    <div className="flex items-center gap-2">
+                        <button
+                            onClick={toggleTheme}
+                            className="btn-icon text-text-muted hover:text-text-primary hover:bg-surface-200 dark:hover:bg-surface-700 flex-1"
+                            title={t.theme.toggle}
+                        >
+                            {resolvedTheme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
+                        </button>
+                        <button
+                            onClick={toggleLanguage}
+                            className="btn-icon text-text-muted hover:text-text-primary hover:bg-surface-200 dark:hover:bg-surface-700 flex-1"
+                            title={t.language.toggle}
+                        >
+                            <Languages size={16} />
+                            <span className="text-xs ml-1">{language === 'zh' ? '中' : 'EN'}</span>
+                        </button>
+                    </div>
                     <div className="flex items-center justify-between px-3 py-2">
                         <div className="flex items-center gap-2 min-w-0">
-                            <div className="w-7 h-7 bg-dark-700 rounded-full flex items-center justify-center text-xs font-bold text-dark-300 shrink-0">
+                            <div className="w-7 h-7 bg-surface-300 dark:bg-surface-600 rounded-full flex items-center justify-center text-xs font-bold text-text-secondary shrink-0">
                                 {user?.username?.[0]?.toUpperCase() || 'A'}
                             </div>
-                            <span className="text-sm text-dark-300 truncate">{user?.username || 'admin'}</span>
+                            <span className="text-sm text-text-secondary truncate">{user?.username || 'admin'}</span>
                         </div>
                         <button
                             onClick={handleLogout}
-                            className="btn-icon text-dark-400 hover:text-red-400 hover:bg-red-500/10"
-                            title="Logout"
+                            className="btn-icon text-text-muted hover:text-danger hover:bg-danger-light"
+                            title={t.common.logout}
                         >
                             <LogOut size={16} />
                         </button>

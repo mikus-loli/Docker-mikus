@@ -1,6 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useStackStore } from '../store';
+import { useI18n } from '../i18n';
 import { ArrowLeft, Save, FileCode } from 'lucide-react';
 
 const defaultCompose = `services:
@@ -18,18 +19,19 @@ export default function NewStack() {
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState(null);
     const { createStack } = useStackStore();
+    const { t } = useI18n();
     const navigate = useNavigate();
 
     const handleSubmit = async (e) => {
         e.preventDefault();
         if (!name.trim()) {
-            setError('Stack name is required');
+            setError(t.stack.nameRequired);
             return;
         }
 
         const stackName = name.trim().toLowerCase().replace(/[^a-z0-9_-]/g, '-');
         if (!/^[a-z0-9][a-z0-9_-]*$/.test(stackName)) {
-            setError('Stack name must start with a letter or number and contain only lowercase letters, numbers, hyphens, and underscores');
+            setError(t.stack.stackNameHint);
             return;
         }
 
@@ -48,52 +50,52 @@ export default function NewStack() {
     return (
         <div className="space-y-6">
             <div className="flex items-center gap-3">
-                <button onClick={() => navigate('/')} className="btn-ghost text-dark-400">
+                <button onClick={() => navigate('/')} className="btn-ghost text-text-muted">
                     <ArrowLeft size={20} />
                 </button>
                 <div>
-                    <h1 className="text-2xl font-bold text-white">New Stack</h1>
-                    <p className="text-dark-400 text-sm mt-0.5">Create a new Docker Compose stack</p>
+                    <h1 className="text-2xl font-bold text-text-primary">{t.stack.newStack}</h1>
+                    <p className="text-text-muted text-sm mt-0.5">{t.stack.createStack}</p>
                 </div>
             </div>
 
             <form onSubmit={handleSubmit} className="space-y-5">
                 {error && (
-                    <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-3 text-red-400 text-sm">
+                    <div className="bg-danger-light border border-danger/30 rounded-lg p-3 text-danger-dark dark:text-danger text-sm">
                         {error}
                     </div>
                 )}
 
                 <div>
-                    <label className="block text-sm font-medium text-dark-300 mb-1.5">
-                        Stack Name
+                    <label className="block text-sm font-medium text-text-secondary mb-1.5">
+                        {t.stack.stackName}
                     </label>
                     <input
                         type="text"
                         value={name}
                         onChange={(e) => setName(e.target.value)}
                         className="input max-w-md"
-                        placeholder="my-stack"
+                        placeholder={t.stack.stackNamePlaceholder}
                         autoFocus
                         required
                     />
-                    <p className="text-dark-500 text-xs mt-1">
-                        Lowercase letters, numbers, hyphens, and underscores only
+                    <p className="text-text-muted text-xs mt-1">
+                        {t.stack.stackNameHint}
                     </p>
                 </div>
 
                 <div>
                     <div className="flex items-center gap-2 mb-1.5">
-                        <FileCode size={16} className="text-primary-400" />
-                        <label className="text-sm font-medium text-dark-300">
-                            docker-compose.yml
+                        <FileCode size={16} className="text-primary-600 dark:text-primary-400" />
+                        <label className="text-sm font-medium text-text-secondary">
+                            {t.stack.composeFile}
                         </label>
                     </div>
-                    <div className="border border-dark-600 rounded-lg overflow-hidden">
+                    <div className="border border-border rounded-lg overflow-hidden">
                         <textarea
                             value={compose}
                             onChange={(e) => setCompose(e.target.value)}
-                            className="w-full bg-dark-900 text-green-400 font-mono text-sm p-4 min-h-[300px] resize-y focus:outline-none"
+                            className="w-full bg-surface-50 dark:bg-surface-950 text-success-dark dark:text-success font-mono text-sm p-4 min-h-[300px] resize-y focus:outline-none"
                             spellCheck={false}
                         />
                     </div>
@@ -101,16 +103,16 @@ export default function NewStack() {
 
                 <div>
                     <div className="flex items-center gap-2 mb-1.5">
-                        <label className="text-sm font-medium text-dark-300">
-                            .env (optional)
+                        <label className="text-sm font-medium text-text-secondary">
+                            {t.stack.envFile}
                         </label>
                     </div>
-                    <div className="border border-dark-600 rounded-lg overflow-hidden">
+                    <div className="border border-border rounded-lg overflow-hidden">
                         <textarea
                             value={env}
                             onChange={(e) => setEnv(e.target.value)}
-                            className="w-full bg-dark-900 text-amber-400 font-mono text-sm p-4 min-h-[120px] resize-y focus:outline-none"
-                            placeholder="# Environment variables&#10;APP_ENV=production&#10;PORT=3000"
+                            className="w-full bg-surface-50 dark:bg-surface-950 text-warning-dark dark:text-warning font-mono text-sm p-4 min-h-[120px] resize-y focus:outline-none"
+                            placeholder={t.stack.envFilePlaceholder}
                             spellCheck={false}
                         />
                     </div>
@@ -123,14 +125,14 @@ export default function NewStack() {
                         className="btn-primary"
                     >
                         <Save size={16} />
-                        {saving ? 'Creating...' : 'Create Stack'}
+                        {saving ? t.stack.creating : t.stack.createStack}
                     </button>
                     <button
                         type="button"
                         onClick={() => navigate('/')}
                         className="btn-secondary"
                     >
-                        Cancel
+                        {t.common.cancel}
                     </button>
                 </div>
             </form>

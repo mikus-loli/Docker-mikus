@@ -1,16 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { useAuthStore } from '../store';
+import { useI18n } from '../i18n';
 import { Terminal as TerminalIcon, Send, Trash2 } from 'lucide-react';
-
-const PRESET_COMMANDS = [
-    { label: 'up -d', command: 'up -d' },
-    { label: 'down', command: 'down' },
-    { label: 'ps', command: 'ps' },
-    { label: 'config', command: 'config' },
-    { label: 'pull', command: 'pull' },
-    { label: 'logs', command: 'logs --tail=50' },
-    { label: 'restart', command: 'restart' },
-];
 
 export default function Terminal({ stackName }) {
     const [output, setOutput] = useState([]);
@@ -19,6 +10,17 @@ export default function Terminal({ stackName }) {
     const wsRef = useRef(null);
     const terminalRef = useRef(null);
     const token = useAuthStore((s) => s.token);
+    const { t } = useI18n();
+
+    const PRESET_COMMANDS = [
+        { label: t.terminal.presetCommands.up, command: 'up -d' },
+        { label: t.terminal.presetCommands.down, command: 'down' },
+        { label: t.terminal.presetCommands.ps, command: 'ps' },
+        { label: t.terminal.presetCommands.config, command: 'config' },
+        { label: t.terminal.presetCommands.pull, command: 'pull' },
+        { label: t.terminal.presetCommands.logs, command: 'logs --tail=50' },
+        { label: t.terminal.presetCommands.restart, command: 'restart' },
+    ];
 
     const connectAndRun = useCallback((cmd) => {
         if (wsRef.current) {
@@ -48,7 +50,7 @@ export default function Terminal({ stackName }) {
                 } else if (msg.type === 'exit') {
                     setOutput((prev) => [
                         ...prev,
-                        { type: 'system', data: `Process exited with code ${msg.code}` },
+                        { type: 'system', data: t.terminal.processExited.replace('{code}', msg.code) },
                     ]);
                     setIsRunning(false);
                     ws.close();
@@ -58,13 +60,13 @@ export default function Terminal({ stackName }) {
 
         ws.onerror = () => {
             setIsRunning(false);
-            setOutput((prev) => [...prev, { type: 'error', data: 'Connection error' }]);
+            setOutput((prev) => [...prev, { type: 'error', data: t.terminal.connectionError }]);
         };
 
         ws.onclose = () => {
             setIsRunning(false);
         };
-    }, [stackName, token]);
+    }, [stackName, token, t]);
 
     useEffect(() => {
         if (terminalRef.current) {
@@ -112,25 +114,25 @@ export default function Terminal({ stackName }) {
             </div>
 
             <div className="card overflow-hidden">
-                <div className="bg-dark-800/50 px-4 py-2 border-b border-dark-700/50 flex items-center justify-between">
+                <div className="bg-surface-200 dark:bg-surface-800 px-4 py-2 border-b border-border flex items-center justify-between">
                     <div className="flex items-center gap-2">
-                        <TerminalIcon size={14} className={isRunning ? 'text-emerald-400 animate-pulse' : 'text-dark-500'} />
-                        <span className="text-xs text-dark-400">
+                        <TerminalIcon size={14} className={isRunning ? 'text-success animate-pulse' : 'text-text-muted'} />
+                        <span className="text-xs text-text-muted">
                             docker compose [{stackName}]
                         </span>
                     </div>
-                    <button onClick={handleClear} className="btn-ghost btn-sm text-dark-400">
+                    <button onClick={handleClear} className="btn-ghost btn-sm text-text-muted">
                         <Trash2 size={12} />
                     </button>
                 </div>
                 <div
                     ref={terminalRef}
-                    className="bg-dark-950 p-4 font-mono text-xs leading-relaxed overflow-auto"
+                    className="bg-surface-50 dark:bg-surface-950 p-4 font-mono text-xs leading-relaxed overflow-auto"
                     style={{ height: '400px' }}
                 >
                     {output.length === 0 ? (
-                        <p className="text-dark-600">
-                            Run a docker compose command or use the presets above.
+                        <p className="text-text-muted">
+                            {t.terminal.waiting}
                         </p>
                     ) : (
                         output.map((line, i) => (
@@ -138,12 +140,12 @@ export default function Terminal({ stackName }) {
                                 key={i}
                                 className={`whitespace-pre-wrap break-all ${
                                     line.type === 'input'
-                                        ? 'text-primary-400 font-bold'
+                                        ? 'text-primary-600 dark:text-primary-400 font-bold'
                                         : line.type === 'stderr' || line.type === 'error'
-                                        ? 'text-red-400'
+                                        ? 'text-danger'
                                         : line.type === 'system'
-                                        ? 'text-dark-500 italic'
-                                        : 'text-dark-200'
+                                        ? 'text-text-muted italic'
+                                        : 'text-text-secondary'
                                 }`}
                             >
                                 {line.data}
@@ -154,23 +156,23 @@ export default function Terminal({ stackName }) {
 
                 <form
                     onSubmit={handleSubmit}
-                    className="border-t border-dark-700/50 flex items-center"
+                    className="border-t border-border flex items-center"
                 >
-                    <span className="text-primary-400 font-mono text-sm px-3">$</span>
-                    <span className="text-dark-400 font-mono text-xs">docker compose</span>
+                    <span className="text-primary-600 dark:text-primary-400 font-mono text-sm px-3">$</span>
+                    <span className="text-text-muted font-mono text-xs">docker compose</span>
                     <input
                         type="text"
                         value={command}
                         onChange={(e) => setCommand(e.target.value)}
-                        className="flex-1 bg-transparent text-white font-mono text-sm px-2 py-2.5 focus:outline-none"
-                        placeholder="up -d"
+                        className="flex-1 bg-transparent text-text-primary font-mono text-sm px-2 py-2.5 focus:outline-none"
+                        placeholder={t.terminal.placeholder}
                         disabled={isRunning}
                         autoFocus
                     />
                     <button
                         type="submit"
                         disabled={isRunning || !command.trim()}
-                        className="px-3 py-2.5 text-dark-400 hover:text-white transition-colors disabled:opacity-50"
+                        className="px-3 py-2.5 text-text-muted hover:text-text-primary transition-colors disabled:opacity-50"
                     >
                         <Send size={14} />
                     </button>
