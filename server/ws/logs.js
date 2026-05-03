@@ -25,24 +25,45 @@ function createLogsWsHandler(dockerService) {
         }
 
         let stream = null;
+        let destroyed = false;
 
-        try {
-            stream = dockerService.streamContainerLogs(containerId, { tail });
-
-            stream.on('data', (chunk) => {
-                if (ws.readyState === 1) {
-                    const header = chunk.slice(0, 8);
-                    const type = header[0];
-                    const data = chunk.slice(8).toString('utf8');
-                    ws.send(JSON.stringify({
-                        type: type === 1 ? 'stdout' : 'stderr',
-                        data,
-                        timestamp: Date.now(),
-                    }));
+        dockerService.streamContainerLogs(containerId, { tail })
+            .then((logStream) => {
+                if (destroyed) {
+                    logStream.destroy();
+                    return;
                 }
-            });
+                stream = logStream;
 
-            stream.on('error', (err) => {
+                stream.on('data', (chunk) => {
+                    if (ws.readyState === 1 && !destroyed) {
+                        const header = chunk.slice(0, 8);
+                        const type = header[0];
+                        const data = chunk.slice(8).toString('utf8');
+                        ws.send(JSON.stringify({
+                            type: type === 1 ? 'stdout' : 'stderr',
+                            data,
+                            timestamp: Date.now(),
+                        }));
+                    }
+                });
+
+                stream.on('error', (err) => {
+                    if (ws.readyState === 1 && !destroyed) {
+                        ws.send(JSON.stringify({
+                            type: 'error',
+                            data: err.message,
+                        }));
+                    }
+                });
+
+                stream.on('end', () => {
+                    if (ws.readyState === 1 && !destroyed) {
+                        ws.send(JSON.stringify({ type: 'end' }));
+                    }
+                });
+            })
+            .catch((err) => {
                 if (ws.readyState === 1) {
                     ws.send(JSON.stringify({
                         type: 'error',
@@ -51,21 +72,8 @@ function createLogsWsHandler(dockerService) {
                 }
             });
 
-            stream.on('end', () => {
-                if (ws.readyState === 1) {
-                    ws.send(JSON.stringify({ type: 'end' }));
-                }
-            });
-        } catch (err) {
-            if (ws.readyState === 1) {
-                ws.send(JSON.stringify({
-                    type: 'error',
-                    data: err.message,
-                }));
-            }
-        }
-
         ws.on('close', () => {
+            destroyed = true;
             if (stream) {
                 stream.destroy();
                 stream = null;

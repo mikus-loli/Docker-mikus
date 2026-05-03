@@ -21,10 +21,14 @@ export default function Dashboard() {
     const navigate = useNavigate();
     const [search, setSearch] = useState('');
     const [viewMode, setViewMode] = useState('grid');
+    const [initialLoading, setInitialLoading] = useState(true);
 
     useEffect(() => {
-        fetchStacks();
-        fetchSystemInfo();
+        const load = async () => {
+            await Promise.all([fetchStacks(), fetchSystemInfo()]);
+            setInitialLoading(false);
+        };
+        load();
         const interval = setInterval(fetchStacks, 10000);
         return () => clearInterval(interval);
     }, [fetchStacks, fetchSystemInfo]);
@@ -36,6 +40,14 @@ export default function Dashboard() {
     const runningStacks = stacks.filter((s) => s.status === 'running').length;
     const totalServices = stacks.reduce((acc, s) => acc + (s.serviceCount || 0), 0);
     const runningServices = stacks.reduce((acc, s) => acc + (s.runningCount || 0), 0);
+
+    if (initialLoading) {
+        return (
+            <div className="flex items-center justify-center h-64">
+                <RefreshCw size={24} className="animate-spin text-text-muted" />
+            </div>
+        );
+    }
 
     return (
         <div className="space-y-6">

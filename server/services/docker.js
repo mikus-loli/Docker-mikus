@@ -73,7 +73,7 @@ class DockerService {
         return container.logs(defaultOpts);
     }
 
-    streamContainerLogs(id, options = {}) {
+    async streamContainerLogs(id, options = {}) {
         const container = this.docker.getContainer(id);
         const opts = {
             stdout: true,
