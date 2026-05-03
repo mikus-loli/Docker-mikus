@@ -1,6 +1,6 @@
 const jwt = require('jsonwebtoken');
 
-function createLogsWsHandler(dockerService) {
+function createLogsWsHandler(dockerService, jwtSecret, db) {
     return function handleLogs(ws, req, url) {
         const token = url.searchParams.get('token');
         const containerId = url.searchParams.get('container');
@@ -12,8 +12,11 @@ function createLogsWsHandler(dockerService) {
         }
 
         try {
-            const jwtSecret = process.env.JWT_SECRET || 'mikus-secret-change-in-production';
-            jwt.verify(token, jwtSecret);
+            const decoded = jwt.verify(token, jwtSecret);
+            if (db && decoded.tid && db.isTokenBlacklisted(decoded.tid)) {
+                ws.close(4001, 'Token has been revoked');
+                return;
+            }
         } catch {
             ws.close(4001, 'Invalid token');
             return;
@@ -21,6 +24,11 @@ function createLogsWsHandler(dockerService) {
 
         if (!containerId) {
             ws.close(4002, 'Container ID required');
+            return;
+        }
+
+        if (!/^[a-zA-Z0-9][a-zA-Z0-9_.-]+$/.test(containerId)) {
+            ws.close(4003, 'Invalid container ID format');
             return;
         }
 
@@ -48,11 +56,11 @@ function createLogsWsHandler(dockerService) {
                     }
                 });
 
-                stream.on('error', (err) => {
+                stream.on('error', () => {
                     if (ws.readyState === 1 && !destroyed) {
                         ws.send(JSON.stringify({
                             type: 'error',
-                            data: err.message,
+                            data: 'Log stream error',
                         }));
                     }
                 });
@@ -63,11 +71,11 @@ function createLogsWsHandler(dockerService) {
                     }
                 });
             })
-            .catch((err) => {
+            .catch(() => {
                 if (ws.readyState === 1) {
                     ws.send(JSON.stringify({
                         type: 'error',
-                        data: err.message,
+                        data: 'Failed to stream logs',
                     }));
                 }
             });

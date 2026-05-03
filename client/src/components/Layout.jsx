@@ -28,8 +28,8 @@ export default function Layout() {
         return () => clearInterval(interval);
     }, [fetchSystemInfo]);
 
-    const handleLogout = () => {
-        logout();
+    const handleLogout = async () => {
+        await logout();
         navigate('/login');
     };
 

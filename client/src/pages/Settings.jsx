@@ -24,8 +24,17 @@ export default function Settings() {
             return;
         }
 
-        if (newPassword.length < 4) {
+        if (newPassword.length < 8) {
             setError(t.auth.passwordTooShort);
+            return;
+        }
+
+        const hasLower = /[a-z]/.test(newPassword);
+        const hasUpper = /[A-Z]/.test(newPassword);
+        const hasDigit = /[0-9]/.test(newPassword);
+        const categories = [hasLower, hasUpper, hasDigit].filter(Boolean).length;
+        if (categories < 2) {
+            setError(t.auth.passwordComplexity || 'Password must contain at least two of: lowercase, uppercase, digits');
             return;
         }
 

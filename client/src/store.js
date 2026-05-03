@@ -9,6 +9,34 @@ class ApiError extends Error {
     }
 }
 
+let isRefreshing = false;
+let refreshSubscribers = [];
+
+function subscribeTokenRefresh(cb) {
+    refreshSubscribers.push(cb);
+}
+
+function onTokenRefreshed(newToken) {
+    refreshSubscribers.forEach((cb) => cb(newToken));
+    refreshSubscribers = [];
+}
+
+async function refreshToken() {
+    const refreshToken = localStorage.getItem('mikus_refresh_token');
+    if (!refreshToken) {
+        throw new ApiError('No refresh token', 401);
+    }
+    const res = await fetch(`${API_BASE}/auth/refresh`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refreshToken }),
+    });
+    if (!res.ok) {
+        throw new ApiError('Refresh failed', 401);
+    }
+    return res.json();
+}
+
 async function request(path, options = {}) {
     const token = useAuthStore.getState().token;
     const headers = {
@@ -19,10 +47,43 @@ async function request(path, options = {}) {
 
     const res = await fetch(`${API_BASE}${path}`, { ...options, headers });
 
-    if (res.status === 401) {
-        useAuthStore.getState().logout();
-        window.location.href = '/login';
-        throw new ApiError('Session expired', 401);
+    if (res.status === 401 && token) {
+        if (!isRefreshing) {
+            isRefreshing = true;
+            try {
+                const data = await refreshToken();
+                localStorage.setItem('mikus_token', data.token);
+                localStorage.setItem('mikus_refresh_token', data.refreshToken);
+                useAuthStore.getState().setTokens(data.token, data.refreshToken);
+                isRefreshing = false;
+                onTokenRefreshed(data.token);
+            } catch {
+                isRefreshing = false;
+                refreshSubscribers = [];
+                useAuthStore.getState().logout();
+                window.location.href = '/login';
+                throw new ApiError('Session expired', 401);
+            }
+        }
+
+        return new Promise((resolve, reject) => {
+            subscribeTokenRefresh((newToken) => {
+                const retryHeaders = {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${newToken}`,
+                    ...options.headers,
+                };
+                fetch(`${API_BASE}${path}`, { ...options, headers: retryHeaders })
+                    .then((retryRes) => {
+                        if (!retryRes.ok) {
+                            retryRes.json().then((d) => reject(new ApiError(d.error || 'Request failed', retryRes.status))).catch(() => reject(new ApiError('Request failed', retryRes.status)));
+                        } else {
+                            retryRes.json().then(resolve).catch(() => resolve(null));
+                        }
+                    })
+                    .catch(reject);
+            });
+        });
     }
 
     if (!res.ok) {
@@ -35,9 +96,12 @@ async function request(path, options = {}) {
 
 export const useAuthStore = create((set, get) => ({
     token: localStorage.getItem('mikus_token') || null,
+    refreshToken: localStorage.getItem('mikus_refresh_token') || null,
     user: null,
     loading: false,
     error: null,
+
+    setTokens: (token, refreshToken) => set({ token, refreshToken }),
 
     login: async (username, password) => {
         set({ loading: true, error: null });
@@ -47,7 +111,8 @@ export const useAuthStore = create((set, get) => ({
                 body: JSON.stringify({ username, password }),
             });
             localStorage.setItem('mikus_token', data.token);
-            set({ token: data.token, user: data.user, loading: false });
+            localStorage.setItem('mikus_refresh_token', data.refreshToken);
+            set({ token: data.token, refreshToken: data.refreshToken, user: data.user, loading: false });
             return data;
         } catch (err) {
             set({ error: err.message, loading: false });
@@ -55,9 +120,22 @@ export const useAuthStore = create((set, get) => ({
         }
     },
 
-    logout: () => {
+    logout: async () => {
+        const token = get().token;
+        const refreshToken = get().refreshToken;
+        try {
+            await fetch(`${API_BASE}/auth/logout`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+                },
+                body: JSON.stringify({ refreshToken }),
+            });
+        } catch {}
         localStorage.removeItem('mikus_token');
-        set({ token: null, user: null });
+        localStorage.removeItem('mikus_refresh_token');
+        set({ token: null, refreshToken: null, user: null });
     },
 
     fetchUser: async () => {
@@ -71,10 +149,16 @@ export const useAuthStore = create((set, get) => ({
     },
 
     changePassword: async (currentPassword, newPassword) => {
-        return request('/auth/change-password', {
+        const data = await request('/auth/change-password', {
             method: 'POST',
             body: JSON.stringify({ currentPassword, newPassword }),
         });
+        if (data.token) {
+            localStorage.setItem('mikus_token', data.token);
+            localStorage.setItem('mikus_refresh_token', data.refreshToken);
+            set({ token: data.token, refreshToken: data.refreshToken });
+        }
+        return data;
     },
 }));
 

@@ -15,6 +15,8 @@ FROM node:20-alpine
 
 RUN apk add --no-cache docker-cli docker-cli-compose
 
+RUN addgroup -S mikus && adduser -S mikus -G mikus
+
 WORKDIR /app
 
 COPY package.json package-lock.json ./
@@ -23,7 +25,9 @@ RUN npm ci --omit=dev
 COPY --from=builder /app/client/dist ./client/dist
 COPY server ./server
 
-RUN mkdir -p /app/stacks /app/data
+RUN mkdir -p /app/stacks /app/data && chown -R mikus:mikus /app/stacks /app/data
+
+USER mikus
 
 EXPOSE 3001
 

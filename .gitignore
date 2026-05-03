@@ -5,3 +5,6 @@ data/
 stacks/
 *.db
 .env
+data/.jwt_secret
+data/initial-credentials.txt
+data/mikus.json

@@ -2,7 +2,36 @@ const jwt = require('jsonwebtoken');
 const path = require('path');
 const fs = require('fs');
 
-function createTerminalWsHandler(stackManager) {
+const ALLOWED_COMPOSE_COMMANDS = [
+    'up', 'down', 'restart', 'stop', 'start', 'pull',
+    'ps', 'logs', 'config', 'build', 'images', 'top',
+    'port', 'pause', 'unpause', 'rm', 'create',
+];
+
+const ALLOWED_SHELLS = ['/bin/sh', '/bin/bash', '/bin/ash', '/bin/zsh'];
+
+function validateComposeCommand(args) {
+    if (args.length === 0) return false;
+    const subCommand = args[0].toLowerCase();
+    if (!ALLOWED_COMPOSE_COMMANDS.includes(subCommand)) return false;
+    for (let i = 1; i < args.length; i++) {
+        const arg = args[i];
+        if (arg.startsWith('-') && (arg.includes('=') || arg.length > 20)) {
+            if (arg.startsWith('--env-file') || arg.startsWith('--file')) {
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
+function isPathSafe(baseDir, targetPath) {
+    const resolvedBase = path.resolve(baseDir);
+    const resolvedTarget = path.resolve(targetPath);
+    return resolvedTarget.startsWith(resolvedBase + path.sep) || resolvedTarget === resolvedBase;
+}
+
+function createTerminalWsHandler(stackManager, jwtSecret, db) {
     return function handleTerminal(ws, req, url) {
         const token = url.searchParams.get('token');
         const stackName = url.searchParams.get('stack');
@@ -14,9 +43,13 @@ function createTerminalWsHandler(stackManager) {
             return;
         }
 
+        let decoded;
         try {
-            const jwtSecret = process.env.JWT_SECRET || 'mikus-secret-change-in-production';
-            jwt.verify(token, jwtSecret);
+            decoded = jwt.verify(token, jwtSecret);
+            if (db && decoded.tid && db.isTokenBlacklisted(decoded.tid)) {
+                ws.close(4001, 'Token has been revoked');
+                return;
+            }
         } catch {
             ws.close(4001, 'Invalid token');
             return;
@@ -27,6 +60,21 @@ function createTerminalWsHandler(stackManager) {
             return;
         }
 
+        if (!ALLOWED_SHELLS.includes(shell)) {
+            ws.close(4003, 'Shell not allowed');
+            return;
+        }
+
+        if (containerId && !/^[a-zA-Z0-9][a-zA-Z0-9_.-]+$/.test(containerId)) {
+            ws.close(4003, 'Invalid container ID format');
+            return;
+        }
+
+        if (stackName && !/^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/.test(stackName)) {
+            ws.close(4003, 'Invalid stack name format');
+            return;
+        }
+
         let proc = null;
         let destroyed = false;
 
@@ -34,7 +82,7 @@ function createTerminalWsHandler(stackManager) {
             try {
                 proc = stackManager.docker.execContainerInteractive(containerId, shell);
             } catch (err) {
-                ws.send(JSON.stringify({ type: 'error', data: `Failed to exec: ${err.message}` }));
+                ws.send(JSON.stringify({ type: 'error', data: 'Failed to exec into container' }));
                 ws.close();
                 return;
             }
@@ -60,10 +108,10 @@ function createTerminalWsHandler(stackManager) {
                 }
             });
 
-            proc.on('error', (err) => {
+            proc.on('error', () => {
                 proc = null;
                 if (ws.readyState === 1 && !destroyed) {
-                    ws.send(JSON.stringify({ type: 'error', data: `Process error: ${err.message}` }));
+                    ws.send(JSON.stringify({ type: 'error', data: 'Process error' }));
                 }
             });
 
@@ -95,6 +143,12 @@ function createTerminalWsHandler(stackManager) {
         }
 
         const stackPath = path.join(stackManager.stacksDir, stackName);
+
+        if (!isPathSafe(stackManager.stacksDir, stackPath)) {
+            ws.send(JSON.stringify({ type: 'error', data: 'Invalid stack path' }));
+            ws.close();
+            return;
+        }
 
         if (!fs.existsSync(stackPath)) {
             ws.send(JSON.stringify({ type: 'error', data: `Stack "${stackName}" not found` }));
@@ -140,10 +194,15 @@ function createTerminalWsHandler(stackManager) {
 
                     const args = parseArgs(commandStr);
 
+                    if (!validateComposeCommand(args)) {
+                        ws.send(JSON.stringify({ type: 'error', data: `Command not allowed. Allowed: ${ALLOWED_COMPOSE_COMMANDS.join(', ')}` }));
+                        return;
+                    }
+
                     try {
                         proc = stackManager.docker.runComposeInteractive(stackPath, args, env);
                     } catch (err) {
-                        ws.send(JSON.stringify({ type: 'error', data: `Failed to start: ${err.message}` }));
+                        ws.send(JSON.stringify({ type: 'error', data: 'Failed to start command' }));
                         return;
                     }
 
@@ -168,10 +227,10 @@ function createTerminalWsHandler(stackManager) {
                         }
                     });
 
-                    proc.on('error', (err) => {
+                    proc.on('error', () => {
                         proc = null;
                         if (ws.readyState === 1 && !destroyed) {
-                            ws.send(JSON.stringify({ type: 'error', data: `Process error: ${err.message}` }));
+                            ws.send(JSON.stringify({ type: 'error', data: 'Process error' }));
                             ws.send(JSON.stringify({ type: 'done', code: 1 }));
                         }
                     });
@@ -180,9 +239,7 @@ function createTerminalWsHandler(stackManager) {
                         if (proc.stdin.writable) {
                             proc.stdin.write(msg.data);
                         }
-                    } catch (err) {
-                        ws.send(JSON.stringify({ type: 'error', data: `Input error: ${err.message}` }));
-                    }
+                    } catch {}
                 } else if (msg.type === 'kill') {
                     killProc();
                 } else if (msg.type === 'ping') {
@@ -190,9 +247,6 @@ function createTerminalWsHandler(stackManager) {
                 }
             } catch (err) {
                 console.error('Terminal WS error:', err);
-                if (ws.readyState === 1) {
-                    ws.send(JSON.stringify({ type: 'error', data: `Internal error: ${err.message}` }));
-                }
             }
         });
 

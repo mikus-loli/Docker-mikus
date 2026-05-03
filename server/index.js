@@ -3,7 +3,9 @@ const http = require('http');
 const { WebSocketServer } = require('ws');
 const cors = require('cors');
 const compression = require('compression');
+const helmet = require('helmet');
 const path = require('path');
+const jwt = require('jsonwebtoken');
 const { initDB } = require('./db');
 const { createAuthRoutes, authMiddleware } = require('./auth');
 const { createStackRoutes } = require('./routes/stacks');
@@ -12,18 +14,41 @@ const { createTerminalWsHandler } = require('./ws/terminal');
 const { createLogsWsHandler } = require('./ws/logs');
 const { DockerService } = require('./services/docker');
 const { StackManager } = require('./services/stack-manager');
+const { getOrCreateSecret } = require('./secret');
 
 const PORT = process.env.PORT || 3001;
 const STACKS_DIR = process.env.STACKS_DIR || path.join(__dirname, '..', 'stacks');
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, '..', 'data');
-const JWT_SECRET = process.env.JWT_SECRET || 'mikus-secret-change-in-production';
-
-if (JWT_SECRET === 'mikus-secret-change-in-production') {
-    console.warn('WARNING: Using default JWT secret. Set JWT_SECRET environment variable in production!');
-}
+const JWT_SECRET = getOrCreateSecret(DATA_DIR);
 
 const app = express();
 const server = http.createServer(app);
+
+const db = initDB(DATA_DIR);
+const dockerService = new DockerService();
+const stackManager = new StackManager(STACKS_DIR, dockerService);
+
+const corsOrigin = process.env.CORS_ORIGIN || '';
+
+app.use(helmet({
+    contentSecurityPolicy: false,
+    crossOriginEmbedderPolicy: false,
+}));
+app.use(compression());
+
+if (corsOrigin) {
+    const origins = corsOrigin.split(',').map(o => o.trim()).filter(Boolean);
+    app.use(cors({
+        origin: origins,
+        methods: ['GET', 'POST', 'PUT', 'DELETE'],
+        allowedHeaders: ['Content-Type', 'Authorization'],
+        credentials: true,
+    }));
+} else {
+    app.use(cors());
+}
+
+app.use(express.json({ limit: '1mb' }));
 
 const wss = new WebSocketServer({
     server,
@@ -37,8 +62,11 @@ const wss = new WebSocketServer({
             return;
         }
         try {
-            const jwt = require('jsonwebtoken');
-            jwt.verify(token, JWT_SECRET);
+            const decoded = jwt.verify(token, JWT_SECRET);
+            if (db && decoded.tid && db.isTokenBlacklisted(decoded.tid)) {
+                callback(false, 401, 'Token has been revoked');
+                return;
+            }
             callback(true);
         } catch {
             callback(false, 401, 'Invalid token');
@@ -46,25 +74,17 @@ const wss = new WebSocketServer({
     },
 });
 
-app.use(compression());
-app.use(cors());
-app.use(express.json({ limit: '1mb' }));
-
-const db = initDB(DATA_DIR);
-const dockerService = new DockerService();
-const stackManager = new StackManager(STACKS_DIR, dockerService);
-
 app.use('/api/auth', createAuthRoutes(db, JWT_SECRET));
 
-app.use('/api/stacks', authMiddleware(JWT_SECRET), createStackRoutes(stackManager));
-app.use('/api/containers', authMiddleware(JWT_SECRET), createContainerRoutes(dockerService));
+app.use('/api/stacks', authMiddleware(JWT_SECRET, db), createStackRoutes(stackManager));
+app.use('/api/containers', authMiddleware(JWT_SECRET, db), createContainerRoutes(dockerService));
 
-app.get('/api/system/info', authMiddleware(JWT_SECRET), async (req, res) => {
+app.get('/api/system/info', authMiddleware(JWT_SECRET, db), async (req, res) => {
     try {
         const info = await dockerService.getSystemInfo();
         res.json(info);
     } catch (err) {
-        res.status(500).json({ error: err.message });
+        res.status(500).json({ error: 'Failed to get system info' });
     }
 });
 
@@ -74,8 +94,8 @@ app.get('*', (req, res) => {
     res.sendFile(path.join(__dirname, '..', 'client', 'dist', 'index.html'));
 });
 
-const terminalHandler = createTerminalWsHandler(stackManager);
-const logsHandler = createLogsWsHandler(dockerService);
+const terminalHandler = createTerminalWsHandler(stackManager, JWT_SECRET, db);
+const logsHandler = createLogsWsHandler(dockerService, JWT_SECRET, db);
 
 wss.on('connection', (ws, req) => {
     const url = new URL(req.url, `http://${req.headers.host}`);

@@ -13,9 +13,9 @@ services:
       - mikus-data:/app/data
       - mikus-stacks:/app/stacks
     environment:
-      - JWT_SECRET=change-this-to-a-secure-secret
       - PORT=3001
       - DOCKER_SOCKET=/var/run/docker.sock
+      - CORS_ORIGIN=${CORS_ORIGIN:-}
     labels:
       - "com.mikus.managed=true"
 
