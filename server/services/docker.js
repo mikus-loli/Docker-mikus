@@ -169,6 +169,12 @@ class DockerService {
             env: envVars,
         });
     }
+
+    execContainerInteractive(containerId, shell = '/bin/sh') {
+        return spawn('docker', ['exec', '-it', containerId, shell], {
+            env: process.env,
+        });
+    }
 }
 
 module.exports = { DockerService };

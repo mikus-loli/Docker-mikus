@@ -40,6 +40,7 @@ export default function StackDetail() {
     const [composeData, setComposeData] = useState(null);
     const [error, setError] = useState(null);
     const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+    const [terminalContainer, setTerminalContainer] = useState(null);
     const pollRef = useRef(null);
 
     const loadStack = useCallback(async () => {
@@ -237,6 +238,10 @@ export default function StackDetail() {
                             setSelectedService(svc);
                             setActiveTab('logs');
                         }}
+                        onOpenTerminal={(svc) => {
+                            setTerminalContainer(svc);
+                            setActiveTab('terminal');
+                        }}
                     />
                 )}
 
@@ -257,7 +262,7 @@ export default function StackDetail() {
                 )}
 
                 {activeTab === 'terminal' && (
-                    <Terminal stackName={name} />
+                    <Terminal stackName={name} container={terminalContainer} />
                 )}
             </div>
         </div>

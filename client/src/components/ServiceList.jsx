@@ -5,6 +5,7 @@ import {
     RotateCw,
     Activity,
     Container,
+    Terminal,
 } from 'lucide-react';
 
 const statusColors = {
@@ -37,7 +38,7 @@ const statusLabelKeys = {
     'not created': 'service.notCreated',
 };
 
-export default function ServiceList({ services, stackName, onServiceAction, onSelectService }) {
+export default function ServiceList({ services, stackName, onServiceAction, onSelectService, onOpenTerminal }) {
     const { t } = useI18n();
 
     if (!services || services.length === 0) {
@@ -87,6 +88,15 @@ export default function ServiceList({ services, stackName, onServiceAction, onSe
                                 {svc.ports?.length || 0}
                             </div>
                             <div className="col-span-3 flex items-center justify-end gap-1.5">
+                                {svc.status === 'running' && svc.containerId && onOpenTerminal && (
+                                    <button
+                                        onClick={() => onOpenTerminal(svc)}
+                                        className="btn-icon text-text-muted hover:text-success-dark dark:hover:text-success hover:bg-success-light"
+                                        title={t.service.terminal}
+                                    >
+                                        <Terminal size={14} />
+                                    </button>
+                                )}
                                 {svc.status === 'running' ? (
                                     <>
                                         <button

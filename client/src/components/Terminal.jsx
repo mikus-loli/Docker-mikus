@@ -1,17 +1,19 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { useAuthStore } from '../store';
 import { useI18n } from '../i18n';
-import { Terminal as TerminalIcon, Send, Trash2, XCircle } from 'lucide-react';
+import { Terminal as TerminalIcon, Send, Trash2, XCircle, Monitor } from 'lucide-react';
 
 const MAX_OUTPUT_LINES = 3000;
 
-export default function Terminal({ stackName }) {
+export default function Terminal({ stackName, container }) {
     const [output, setOutput] = useState([]);
     const [command, setCommand] = useState('');
     const [isRunning, setIsRunning] = useState(false);
     const [connected, setConnected] = useState(false);
+    const [mode, setMode] = useState(container ? 'container' : 'compose');
     const wsRef = useRef(null);
     const terminalRef = useRef(null);
+    const inputRef = useRef(null);
     const token = useAuthStore((s) => s.token);
     const { t } = useI18n();
     const pingRef = useRef(null);
@@ -33,20 +35,25 @@ export default function Terminal({ stackName }) {
         }
 
         const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const wsUrl = `${wsProtocol}//${window.location.host}/ws?type=terminal&stack=${stackName}&token=${token}`;
+        let wsUrl = `${wsProtocol}//${window.location.host}/ws?type=terminal&stack=${stackName}&token=${token}`;
+
+        if (mode === 'container' && container?.containerId) {
+            wsUrl = `${wsProtocol}//${window.location.host}/ws?type=terminal&container=${container.containerId}&shell=/bin/sh&token=${token}`;
+        }
 
         const ws = new WebSocket(wsUrl);
         wsRef.current = ws;
 
-        ws.onopen = () => {
-            setConnected(true);
-        };
+        ws.onopen = () => {};
 
         ws.onmessage = (event) => {
             try {
                 const msg = JSON.parse(event.data);
                 if (msg.type === 'ready') {
                     setConnected(true);
+                    if (msg.mode === 'container') {
+                        addOutput({ type: 'system', data: `Connected to ${container?.name || msg.containerId} (${msg.shell})` });
+                    }
                 } else if (msg.type === 'running') {
                     setIsRunning(true);
                     addOutput({ type: 'input', data: `$ docker compose ${msg.command}` });
@@ -55,11 +62,16 @@ export default function Terminal({ stackName }) {
                 } else if (msg.type === 'error') {
                     addOutput({ type: 'error', data: msg.data });
                 } else if (msg.type === 'done') {
-                    addOutput({
-                        type: 'system',
-                        data: t.terminal.processExited.replace('{code}', msg.code),
-                    });
-                    setIsRunning(false);
+                    if (mode === 'compose') {
+                        addOutput({
+                            type: 'system',
+                            data: t.terminal.processExited.replace('{code}', msg.code),
+                        });
+                        setIsRunning(false);
+                    } else {
+                        addOutput({ type: 'system', data: 'Session ended.' });
+                        setConnected(false);
+                    }
                 }
             } catch {}
         };
@@ -85,7 +97,7 @@ export default function Terminal({ stackName }) {
                 ws.send(JSON.stringify({ type: 'ping' }));
             }
         }, 30000);
-    }, [stackName, token, addOutput, t]);
+    }, [stackName, token, mode, container, addOutput, t]);
 
     useEffect(() => {
         connect();
@@ -107,6 +119,12 @@ export default function Terminal({ stackName }) {
         }
     }, [output]);
 
+    useEffect(() => {
+        if (mode === 'container' && connected && inputRef.current) {
+            inputRef.current.focus();
+        }
+    }, [mode, connected]);
+
     const sendCommand = useCallback((cmd) => {
         const ws = wsRef.current;
         if (!ws || ws.readyState !== WebSocket.OPEN) {
@@ -117,6 +135,13 @@ export default function Terminal({ stackName }) {
         ws.send(JSON.stringify({ type: 'command', command: cmd }));
     }, [connect, addOutput, t]);
 
+    const sendInput = useCallback((data) => {
+        const ws = wsRef.current;
+        if (ws && ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({ type: 'input', data }));
+        }
+    }, []);
+
     const killProcess = useCallback(() => {
         const ws = wsRef.current;
         if (ws && ws.readyState === WebSocket.OPEN) {
@@ -124,11 +149,19 @@ export default function Terminal({ stackName }) {
         }
     }, []);
 
-    const handleSubmit = (e) => {
+    const handleComposeSubmit = (e) => {
         e.preventDefault();
         if (!command.trim() || isRunning) return;
         sendCommand(command.trim());
         setCommand('');
+    };
+
+    const handleContainerKeyDown = (e) => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            sendInput(e.target.value + '\n');
+            e.target.value = '';
+        }
     };
 
     const handleClear = () => {
@@ -140,24 +173,55 @@ export default function Terminal({ stackName }) {
         connect();
     };
 
+    const switchMode = (newMode) => {
+        if (wsRef.current) {
+            wsRef.current.close();
+            wsRef.current = null;
+        }
+        setOutput([]);
+        setConnected(false);
+        setIsRunning(false);
+        setMode(newMode);
+    };
+
     return (
         <div className="space-y-3">
+            <div className="flex items-center gap-2">
+                <button
+                    onClick={() => switchMode('container')}
+                    className={`btn-sm ${mode === 'container' ? 'btn-primary' : 'btn-secondary'}`}
+                >
+                    <Monitor size={13} />
+                    {t.terminal.containerMode}
+                </button>
+                <button
+                    onClick={() => switchMode('compose')}
+                    className={`btn-sm ${mode === 'compose' ? 'btn-primary' : 'btn-secondary'}`}
+                >
+                    <TerminalIcon size={13} />
+                    {t.terminal.composeMode}
+                </button>
+            </div>
+
             <div className="card overflow-hidden">
                 <div className="bg-surface-200 dark:bg-surface-800 px-4 py-2 border-b border-border flex items-center justify-between">
                     <div className="flex items-center gap-2">
                         <TerminalIcon size={14} className={connected ? (isRunning ? 'text-success animate-pulse' : 'text-success') : 'text-danger'} />
                         <span className="text-xs text-text-muted">
-                            docker compose [{stackName}]
+                            {mode === 'container'
+                                ? `${container?.name || 'container'} / #`
+                                : `docker compose [${stackName}]`
+                            }
                         </span>
                     </div>
                     <div className="flex items-center gap-1">
-                        {isRunning && (
+                        {(isRunning || (mode === 'container' && connected)) && (
                             <button onClick={killProcess} className="btn-ghost btn-sm text-danger hover:bg-danger-light" title={t.common.cancel}>
                                 <XCircle size={12} />
                             </button>
                         )}
                         {!connected && (
-                            <button onClick={handleReconnect} className="btn-ghost btn-sm text-warning" title="Reconnect">
+                            <button onClick={handleReconnect} className="btn-ghost btn-sm text-warning">
                                 ↻
                             </button>
                         )}
@@ -173,7 +237,10 @@ export default function Terminal({ stackName }) {
                 >
                     {output.length === 0 ? (
                         <p className="text-text-muted">
-                            {t.terminal.waiting}
+                            {mode === 'container'
+                                ? t.terminal.containerWaiting
+                                : t.terminal.waiting
+                            }
                         </p>
                     ) : (
                         output.map((line, i) => (
@@ -197,29 +264,44 @@ export default function Terminal({ stackName }) {
                     )}
                 </div>
 
-                <form
-                    onSubmit={handleSubmit}
-                    className="border-t border-border flex items-center"
-                >
-                    <span className="text-primary-600 dark:text-primary-400 font-mono text-sm px-3">$</span>
-                    <span className="text-text-muted font-mono text-xs">docker compose</span>
-                    <input
-                        type="text"
-                        value={command}
-                        onChange={(e) => setCommand(e.target.value)}
-                        className="flex-1 bg-transparent text-text-primary font-mono text-sm px-2 py-2.5 focus:outline-none"
-                        placeholder={isRunning ? '...' : t.terminal.placeholder}
-                        disabled={!connected}
-                        autoFocus
-                    />
-                    <button
-                        type="submit"
-                        disabled={isRunning || !command.trim() || !connected}
-                        className="px-3 py-2.5 text-text-muted hover:text-text-primary transition-colors disabled:opacity-50"
+                {mode === 'compose' ? (
+                    <form
+                        onSubmit={handleComposeSubmit}
+                        className="border-t border-border flex items-center"
                     >
-                        <Send size={14} />
-                    </button>
-                </form>
+                        <span className="text-primary-600 dark:text-primary-400 font-mono text-sm px-3">$</span>
+                        <span className="text-text-muted font-mono text-xs">docker compose</span>
+                        <input
+                            type="text"
+                            value={command}
+                            onChange={(e) => setCommand(e.target.value)}
+                            className="flex-1 bg-transparent text-text-primary font-mono text-sm px-2 py-2.5 focus:outline-none"
+                            placeholder={isRunning ? '...' : t.terminal.placeholder}
+                            disabled={!connected}
+                            autoFocus
+                        />
+                        <button
+                            type="submit"
+                            disabled={isRunning || !command.trim() || !connected}
+                            className="px-3 py-2.5 text-text-muted hover:text-text-primary transition-colors disabled:opacity-50"
+                        >
+                            <Send size={14} />
+                        </button>
+                    </form>
+                ) : (
+                    <div className="border-t border-border flex items-center">
+                        <span className="text-success font-mono text-sm px-3">#</span>
+                        <input
+                            ref={inputRef}
+                            type="text"
+                            onKeyDown={handleContainerKeyDown}
+                            className="flex-1 bg-transparent text-text-primary font-mono text-sm px-2 py-2.5 focus:outline-none"
+                            placeholder={connected ? t.terminal.containerInput : '...'}
+                            disabled={!connected}
+                            autoFocus
+                        />
+                    </div>
+                )}
             </div>
         </div>
     );

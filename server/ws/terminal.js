@@ -6,6 +6,8 @@ function createTerminalWsHandler(stackManager) {
     return function handleTerminal(ws, req, url) {
         const token = url.searchParams.get('token');
         const stackName = url.searchParams.get('stack');
+        const containerId = url.searchParams.get('container');
+        const shell = url.searchParams.get('shell') || '/bin/sh';
 
         if (!token) {
             ws.close(4001, 'Authentication required');
@@ -20,8 +22,75 @@ function createTerminalWsHandler(stackManager) {
             return;
         }
 
-        if (!stackName) {
-            ws.close(4002, 'Stack name required');
+        if (!stackName && !containerId) {
+            ws.close(4002, 'Stack name or container ID required');
+            return;
+        }
+
+        let proc = null;
+        let destroyed = false;
+
+        if (containerId) {
+            try {
+                proc = stackManager.docker.execContainerInteractive(containerId, shell);
+            } catch (err) {
+                ws.send(JSON.stringify({ type: 'error', data: `Failed to exec: ${err.message}` }));
+                ws.close();
+                return;
+            }
+
+            ws.send(JSON.stringify({ type: 'ready', mode: 'container', containerId, shell }));
+
+            proc.stdout.on('data', (chunk) => {
+                if (ws.readyState === 1 && !destroyed) {
+                    ws.send(JSON.stringify({ type: 'stdout', data: chunk.toString() }));
+                }
+            });
+
+            proc.stderr.on('data', (chunk) => {
+                if (ws.readyState === 1 && !destroyed) {
+                    ws.send(JSON.stringify({ type: 'stderr', data: chunk.toString() }));
+                }
+            });
+
+            proc.on('close', (code) => {
+                proc = null;
+                if (ws.readyState === 1 && !destroyed) {
+                    ws.send(JSON.stringify({ type: 'done', code: code ?? 1 }));
+                }
+            });
+
+            proc.on('error', (err) => {
+                proc = null;
+                if (ws.readyState === 1 && !destroyed) {
+                    ws.send(JSON.stringify({ type: 'error', data: `Process error: ${err.message}` }));
+                }
+            });
+
+            ws.on('message', (data) => {
+                if (destroyed || !proc) return;
+                try {
+                    const msg = JSON.parse(data.toString());
+                    if (msg.type === 'input' && proc.stdin.writable) {
+                        proc.stdin.write(msg.data);
+                    } else if (msg.type === 'resize') {
+                        // PTY resize not supported via simple spawn
+                    } else if (msg.type === 'kill') {
+                        if (!proc.killed) {
+                            try { proc.kill('SIGKILL'); } catch {}
+                        }
+                    }
+                } catch {}
+            });
+
+            ws.on('close', () => {
+                destroyed = true;
+                if (proc && !proc.killed) {
+                    try { proc.kill('SIGKILL'); } catch {}
+                    proc = null;
+                }
+            });
+
             return;
         }
 
@@ -42,16 +111,11 @@ function createTerminalWsHandler(stackManager) {
 
         const env = stackManager._loadEnv(stackPath);
 
-        let proc = null;
-        let destroyed = false;
-
-        ws.send(JSON.stringify({ type: 'ready' }));
+        ws.send(JSON.stringify({ type: 'ready', mode: 'compose' }));
 
         function killProc() {
             if (proc && !proc.killed) {
-                try {
-                    proc.kill('SIGKILL');
-                } catch {}
+                try { proc.kill('SIGKILL'); } catch {}
                 proc = null;
             }
         }
@@ -77,11 +141,7 @@ function createTerminalWsHandler(stackManager) {
                     const args = parseArgs(commandStr);
 
                     try {
-                        proc = stackManager.docker.runComposeInteractive(
-                            stackPath,
-                            args,
-                            env
-                        );
+                        proc = stackManager.docker.runComposeInteractive(stackPath, args, env);
                     } catch (err) {
                         ws.send(JSON.stringify({ type: 'error', data: `Failed to start: ${err.message}` }));
                         return;
@@ -91,39 +151,27 @@ function createTerminalWsHandler(stackManager) {
 
                     proc.stdout.on('data', (chunk) => {
                         if (ws.readyState === 1 && !destroyed) {
-                            ws.send(JSON.stringify({
-                                type: 'stdout',
-                                data: chunk.toString(),
-                            }));
+                            ws.send(JSON.stringify({ type: 'stdout', data: chunk.toString() }));
                         }
                     });
 
                     proc.stderr.on('data', (chunk) => {
                         if (ws.readyState === 1 && !destroyed) {
-                            ws.send(JSON.stringify({
-                                type: 'stderr',
-                                data: chunk.toString(),
-                            }));
+                            ws.send(JSON.stringify({ type: 'stderr', data: chunk.toString() }));
                         }
                     });
 
                     proc.on('close', (code) => {
                         proc = null;
                         if (ws.readyState === 1 && !destroyed) {
-                            ws.send(JSON.stringify({
-                                type: 'done',
-                                code: code ?? 1,
-                            }));
+                            ws.send(JSON.stringify({ type: 'done', code: code ?? 1 }));
                         }
                     });
 
                     proc.on('error', (err) => {
                         proc = null;
                         if (ws.readyState === 1 && !destroyed) {
-                            ws.send(JSON.stringify({
-                                type: 'error',
-                                data: `Process error: ${err.message}`,
-                            }));
+                            ws.send(JSON.stringify({ type: 'error', data: `Process error: ${err.message}` }));
                             ws.send(JSON.stringify({ type: 'done', code: 1 }));
                         }
                     });
