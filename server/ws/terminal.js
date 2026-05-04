@@ -40,79 +40,53 @@ function createTerminalWsHandler(stackManager, jwtSecret, db) {
         }
 
         let destroyed = false;
-        let execStream = null;
+        let proc = null;
 
-        stackManager.docker.execContainerInteractive(containerId, shell)
-            .then((stream) => {
-                if (destroyed) {
-                    try { stream.destroy(); } catch {}
-                    return;
-                }
+        try {
+            proc = stackManager.docker.execContainerInteractive(containerId, shell);
+        } catch (err) {
+            ws.send(JSON.stringify({ type: 'error', data: 'Failed to exec into container: ' + err.message }));
+            ws.close();
+            return;
+        }
 
-                execStream = stream;
+        ws.send(JSON.stringify({ type: 'ready', mode: 'container', containerId, shell }));
 
-                ws.send(JSON.stringify({ type: 'ready', mode: 'container', containerId, shell }));
+        proc.stdout.on('data', (chunk) => {
+            if (ws.readyState === 1 && !destroyed) {
+                ws.send(JSON.stringify({ type: 'stdout', data: chunk.toString('utf8') }));
+            }
+        });
 
-                if (typeof stream.resume === 'function') {
-                    stream.resume();
-                }
+        proc.stderr.on('data', (chunk) => {
+            if (ws.readyState === 1 && !destroyed) {
+                ws.send(JSON.stringify({ type: 'stderr', data: chunk.toString('utf8') }));
+            }
+        });
 
-                stream.on('data', (chunk) => {
-                    if (ws.readyState === 1 && !destroyed) {
-                        ws.send(JSON.stringify({ type: 'stdout', data: chunk.toString('utf8') }));
-                    }
-                });
+        proc.on('close', (code) => {
+            proc = null;
+            if (ws.readyState === 1 && !destroyed) {
+                ws.send(JSON.stringify({ type: 'done', code: code ?? 0 }));
+            }
+        });
 
-                stream.on('readable', () => {
-                    let chunk;
-                    while ((chunk = stream.read()) !== null) {
-                        if (ws.readyState === 1 && !destroyed) {
-                            ws.send(JSON.stringify({ type: 'stdout', data: chunk.toString('utf8') }));
-                        }
-                    }
-                });
-
-                stream.on('end', () => {
-                    execStream = null;
-                    if (ws.readyState === 1 && !destroyed) {
-                        ws.send(JSON.stringify({ type: 'done', code: 0 }));
-                    }
-                });
-
-                stream.on('close', () => {
-                    execStream = null;
-                    if (ws.readyState === 1 && !destroyed) {
-                        ws.send(JSON.stringify({ type: 'done', code: 0 }));
-                    }
-                });
-
-                stream.on('error', (err) => {
-                    execStream = null;
-                    if (ws.readyState === 1 && !destroyed) {
-                        ws.send(JSON.stringify({ type: 'error', data: err.message }));
-                        ws.send(JSON.stringify({ type: 'done', code: 1 }));
-                    }
-                });
-            })
-            .catch((err) => {
-                if (ws.readyState === 1 && !destroyed) {
-                    ws.send(JSON.stringify({ type: 'error', data: 'Failed to exec into container: ' + err.message }));
-                    ws.close();
-                }
-            });
+        proc.on('error', (err) => {
+            proc = null;
+            if (ws.readyState === 1 && !destroyed) {
+                ws.send(JSON.stringify({ type: 'error', data: err.message }));
+                ws.send(JSON.stringify({ type: 'done', code: 1 }));
+            }
+        });
 
         ws.on('message', (data) => {
-            if (destroyed) return;
+            if (destroyed || !proc) return;
             try {
                 const msg = JSON.parse(data.toString());
-                if (msg.type === 'input' && execStream) {
+                if (msg.type === 'input') {
                     try {
-                        execStream.write(msg.data);
-                    } catch {}
-                } else if (msg.type === 'resize' && execStream) {
-                    try {
-                        if (typeof execStream.resize === 'function') {
-                            execStream.resize(msg.cols, msg.rows);
+                        if (proc.stdin.writable) {
+                            proc.stdin.write(msg.data);
                         }
                     } catch {}
                 }
@@ -121,19 +95,19 @@ function createTerminalWsHandler(stackManager, jwtSecret, db) {
 
         ws.on('close', () => {
             destroyed = true;
-            if (execStream) {
-                try { execStream.end(); } catch {}
-                try { execStream.destroy(); } catch {}
-                execStream = null;
+            if (proc) {
+                try { proc.stdin.end(); } catch {}
+                try { proc.kill('SIGKILL'); } catch {}
+                proc = null;
             }
         });
 
         ws.on('error', () => {
             destroyed = true;
-            if (execStream) {
-                try { execStream.end(); } catch {}
-                try { execStream.destroy(); } catch {}
-                execStream = null;
+            if (proc) {
+                try { proc.stdin.end(); } catch {}
+                try { proc.kill('SIGKILL'); } catch {}
+                proc = null;
             }
         });
     };
