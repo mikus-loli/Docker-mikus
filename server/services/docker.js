@@ -1,5 +1,5 @@
 const Docker = require('dockerode');
-const { spawn } = require('child_process');
+const { spawn, execSync } = require('child_process');
 const path = require('path');
 const fs = require('fs');
 
@@ -8,6 +8,19 @@ class DockerService {
         this.docker = new Docker({ socketPath: process.env.DOCKER_SOCKET || '/var/run/docker.sock' });
         this.stacksDir = stacksDir || '/app/stacks';
         this.hostStacksDir = hostStacksDir || this.stacksDir;
+        this.dockerCliAvailable = this._checkDockerCli();
+    }
+
+    _checkDockerCli() {
+        try {
+            execSync('docker --version', { stdio: 'pipe' });
+            return true;
+        } catch {
+            console.warn('[Docker] WARNING: docker CLI not found in PATH. Compose operations will fail.');
+            console.warn('[Docker] Please rebuild the image with: docker build -t mikus .');
+            console.warn('[Docker] Or mount the host docker binary: -v /usr/bin/docker:/usr/bin/docker:ro');
+            return false;
+        }
     }
 
     _toHostPath(stackPath) {
@@ -151,6 +164,9 @@ class DockerService {
     }
 
     _runCompose(stackPath, args, env = {}) {
+        if (!this.dockerCliAvailable) {
+            return Promise.reject(new Error('docker CLI not available. Please rebuild the image or mount the host docker binary.'));
+        }
         const hostPath = this._toHostPath(stackPath);
         const composeFile = this._findComposeFile(stackPath);
         if (!composeFile) {
