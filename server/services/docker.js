@@ -1,9 +1,20 @@
 const Docker = require('dockerode');
 const { spawn } = require('child_process');
+const path = require('path');
 
 class DockerService {
-    constructor() {
+    constructor(stacksDir, hostStacksDir) {
         this.docker = new Docker({ socketPath: process.env.DOCKER_SOCKET || '/var/run/docker.sock' });
+        this.stacksDir = stacksDir || '/app/stacks';
+        this.hostStacksDir = hostStacksDir || this.stacksDir;
+    }
+
+    _toHostPath(stackPath) {
+        if (this.hostStacksDir !== this.stacksDir) {
+            const relative = path.relative(this.stacksDir, stackPath);
+            return path.join(this.hostStacksDir, relative);
+        }
+        return stackPath;
     }
 
     async getSystemInfo() {
@@ -130,10 +141,11 @@ class DockerService {
     }
 
     _runCompose(stackPath, args, env = {}) {
+        const hostPath = this._toHostPath(stackPath);
         return new Promise((resolve, reject) => {
             const envVars = { ...process.env, ...env };
             const proc = spawn('docker', ['compose', ...args], {
-                cwd: stackPath,
+                cwd: hostPath,
                 env: envVars,
             });
 
@@ -163,9 +175,10 @@ class DockerService {
     }
 
     runComposeInteractive(stackPath, args, env = {}) {
+        const hostPath = this._toHostPath(stackPath);
         const envVars = { ...process.env, ...env };
         return spawn('docker', ['compose', ...args], {
-            cwd: stackPath,
+            cwd: hostPath,
             env: envVars,
         });
     }

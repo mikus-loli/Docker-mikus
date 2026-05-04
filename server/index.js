@@ -18,6 +18,7 @@ const { getOrCreateSecret } = require('./secret');
 
 const PORT = process.env.PORT || 3001;
 const STACKS_DIR = process.env.STACKS_DIR || path.join(__dirname, '..', 'stacks');
+const HOST_STACKS_DIR = process.env.HOST_STACKS_DIR || STACKS_DIR;
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, '..', 'data');
 const JWT_SECRET = getOrCreateSecret(DATA_DIR);
 
@@ -25,7 +26,7 @@ const app = express();
 const server = http.createServer(app);
 
 const db = initDB(DATA_DIR);
-const dockerService = new DockerService();
+const dockerService = new DockerService(STACKS_DIR, HOST_STACKS_DIR);
 const stackManager = new StackManager(STACKS_DIR, dockerService);
 
 const corsOrigin = process.env.CORS_ORIGIN || '';
@@ -115,6 +116,7 @@ stackManager.startWatching();
 server.listen(PORT, () => {
     console.log(`Mikus server running on port ${PORT}`);
     console.log(`Stacks directory: ${STACKS_DIR}`);
+    console.log(`Host stacks directory: ${HOST_STACKS_DIR}`);
     console.log(`Data directory: ${DATA_DIR}`);
 });
 

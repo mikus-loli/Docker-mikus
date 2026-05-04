@@ -10,17 +10,12 @@ services:
       - "3001:3001"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-      - mikus-data:/app/data
-      - mikus-stacks:/app/stacks
+      - ./data:/app/data
+      - /opt/stacks:/app/stacks
     environment:
       - PORT=3001
       - DOCKER_SOCKET=/var/run/docker.sock
+      - HOST_STACKS_DIR=/opt/stacks
       - CORS_ORIGIN=${CORS_ORIGIN:-}
     labels:
       - "com.mikus.managed=true"
-
-volumes:
-  mikus-data:
-    driver: local
-  mikus-stacks:
-    driver: local
