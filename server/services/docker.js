@@ -1,43 +1,9 @@
 const Docker = require('dockerode');
-const { spawn, execSync } = require('child_process');
-const path = require('path');
-const fs = require('fs');
+const { spawn } = require('child_process');
 
 class DockerService {
-    constructor(stacksDir, hostStacksDir) {
+    constructor() {
         this.docker = new Docker({ socketPath: process.env.DOCKER_SOCKET || '/var/run/docker.sock' });
-        this.stacksDir = stacksDir || '/app/stacks';
-        this.hostStacksDir = hostStacksDir || this.stacksDir;
-        this.dockerCliAvailable = this._checkDockerCli();
-    }
-
-    _checkDockerCli() {
-        try {
-            execSync('docker --version', { stdio: 'pipe' });
-            return true;
-        } catch {
-            console.warn('[Docker] WARNING: docker CLI not found in PATH. Compose operations will fail.');
-            console.warn('[Docker] Please rebuild the image with: docker build -t mikus .');
-            console.warn('[Docker] Or mount the host docker binary: -v /usr/bin/docker:/usr/bin/docker:ro');
-            return false;
-        }
-    }
-
-    _toHostPath(stackPath) {
-        if (this.hostStacksDir !== this.stacksDir) {
-            const relative = path.relative(this.stacksDir, stackPath);
-            return path.join(this.hostStacksDir, relative);
-        }
-        return stackPath;
-    }
-
-    _findComposeFile(dir) {
-        const names = ['docker-compose.yml', 'docker-compose.yaml', 'compose.yml', 'compose.yaml'];
-        for (const name of names) {
-            const filePath = path.join(dir, name);
-            if (fs.existsSync(filePath)) return name;
-        }
-        return null;
     }
 
     async getSystemInfo() {
@@ -164,20 +130,10 @@ class DockerService {
     }
 
     _runCompose(stackPath, args, env = {}) {
-        if (!this.dockerCliAvailable) {
-            return Promise.reject(new Error('docker CLI not available. Please rebuild the image or mount the host docker binary.'));
-        }
-        const hostPath = this._toHostPath(stackPath);
-        const composeFile = this._findComposeFile(stackPath);
-        if (!composeFile) {
-            return Promise.reject(new Error(`No compose file found in ${stackPath}`));
-        }
-        const composeArgs = ['-f', path.join(hostPath, composeFile), ...args];
-        console.log(`[Docker] docker compose ${composeArgs.join(' ')}`);
         return new Promise((resolve, reject) => {
             const envVars = { ...process.env, ...env };
-            const proc = spawn('docker', ['compose', ...composeArgs], {
-                cwd: hostPath,
+            const proc = spawn('docker', ['compose', ...args], {
+                cwd: stackPath,
                 env: envVars,
             });
 
@@ -207,16 +163,9 @@ class DockerService {
     }
 
     runComposeInteractive(stackPath, args, env = {}) {
-        const hostPath = this._toHostPath(stackPath);
-        const composeFile = this._findComposeFile(stackPath);
-        if (!composeFile) {
-            throw new Error(`No compose file found in ${stackPath}`);
-        }
-        const composeArgs = ['-f', path.join(hostPath, composeFile), ...args];
-        console.log(`[Docker] docker compose ${composeArgs.join(' ')} (interactive)`);
         const envVars = { ...process.env, ...env };
-        return spawn('docker', ['compose', ...composeArgs], {
-            cwd: hostPath,
+        return spawn('docker', ['compose', ...args], {
+            cwd: stackPath,
             env: envVars,
         });
     }

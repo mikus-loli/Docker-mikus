@@ -25,7 +25,7 @@ RUN npm ci --omit=dev && apk del python3 make g++
 COPY --from=builder /app/client/dist ./client/dist
 COPY server ./server
 
-RUN mkdir -p /app/stacks /app/data
+RUN mkdir -p /opt/stacks /app/data
 
 EXPOSE 3001
 

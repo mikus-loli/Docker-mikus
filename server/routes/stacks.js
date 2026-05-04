@@ -97,8 +97,7 @@ function createStackRoutes(stackManager) {
             const result = await stackManager.upStack(name);
             res.json({ message: 'Stack started', output: result.output });
         } catch (err) {
-            console.error(`[Stack] Failed to start ${req.params.name}:`, err.message);
-            res.status(500).json({ error: `Failed to start stack: ${err.message}` });
+            res.status(500).json({ error: 'Failed to start stack' });
         }
     });
 
@@ -111,8 +110,7 @@ function createStackRoutes(stackManager) {
             const result = await stackManager.downStack(name);
             res.json({ message: 'Stack stopped', output: result.output });
         } catch (err) {
-            console.error(`[Stack] Failed to stop ${req.params.name}:`, err.message);
-            res.status(500).json({ error: `Failed to stop stack: ${err.message}` });
+            res.status(500).json({ error: 'Failed to stop stack' });
         }
     });
 
@@ -126,8 +124,7 @@ function createStackRoutes(stackManager) {
             const result = await stackManager.restartStack(name, service);
             res.json({ message: 'Stack restarted', output: result.output });
         } catch (err) {
-            console.error(`[Stack] Failed to restart ${req.params.name}:`, err.message);
-            res.status(500).json({ error: `Failed to restart stack: ${err.message}` });
+            res.status(500).json({ error: 'Failed to restart stack' });
         }
     });
 
@@ -141,8 +138,7 @@ function createStackRoutes(stackManager) {
             const result = await stackManager.stopStack(name, service);
             res.json({ message: 'Stack stopped', output: result.output });
         } catch (err) {
-            console.error(`[Stack] Failed to stop ${req.params.name}:`, err.message);
-            res.status(500).json({ error: `Failed to stop stack: ${err.message}` });
+            res.status(500).json({ error: 'Failed to stop stack' });
         }
     });
 
@@ -156,8 +152,7 @@ function createStackRoutes(stackManager) {
             const result = await stackManager.startStack(name, service);
             res.json({ message: 'Stack started', output: result.output });
         } catch (err) {
-            console.error(`[Stack] Failed to start ${req.params.name}:`, err.message);
-            res.status(500).json({ error: `Failed to start stack: ${err.message}` });
+            res.status(500).json({ error: 'Failed to start stack' });
         }
     });
 
@@ -170,8 +165,7 @@ function createStackRoutes(stackManager) {
             const result = await stackManager.pullStack(name);
             res.json({ message: 'Images pulled', output: result.output });
         } catch (err) {
-            console.error(`[Stack] Failed to pull ${req.params.name}:`, err.message);
-            res.status(500).json({ error: `Failed to pull images: ${err.message}` });
+            res.status(500).json({ error: 'Failed to pull images' });
         }
     });
 
