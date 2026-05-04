@@ -1,261 +1,178 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
+import { Terminal as XTerm } from '@xterm/xterm';
+import { FitAddon } from '@xterm/addon-fit';
+import { WebLinksAddon } from '@xterm/addon-web-links';
 import { useAuthStore } from '../store';
 import { useI18n } from '../i18n';
-import { Terminal as TerminalIcon, Trash2, XCircle, Monitor } from 'lucide-react';
+import { Terminal as TerminalIcon, Monitor } from 'lucide-react';
+import '@xterm/xterm/css/xterm.css';
 
-const MAX_OUTPUT_LENGTH = 100000;
+const SHELLS = ['/bin/sh', '/bin/bash'];
 
-export default function Terminal({ stackName, services, initialContainer }) {
-    const [output, setOutput] = useState('');
-    const [connected, setConnected] = useState(false);
-    const [selectedContainer, setSelectedContainer] = useState(initialContainer || null);
-    const [shell, setShell] = useState('/bin/sh');
-    const wsRef = useRef(null);
+function XtermTerminal({ container, shell, onDisconnect }) {
     const terminalRef = useRef(null);
+    const xtermRef = useRef(null);
+    const wsRef = useRef(null);
+    const fitAddonRef = useRef(null);
     const token = useAuthStore((s) => s.token);
     const { t } = useI18n();
-    const pingRef = useRef(null);
+    const [connected, setConnected] = useState(false);
 
-    const runningServices = (services || []).filter(
-        (svc) => svc.status === 'running' && svc.containerId
-    );
+    useEffect(() => {
+        if (!terminalRef.current) return;
 
-    const appendOutput = useCallback((data) => {
-        setOutput((prev) => {
-            const next = prev + data;
-            if (next.length > MAX_OUTPUT_LENGTH) {
-                return next.slice(-60000);
-            }
-            return next;
+        const xterm = new XTerm({
+            cursorBlink: true,
+            cursorStyle: 'bar',
+            fontSize: 14,
+            fontFamily: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', Menlo, Monaco, 'Courier New', monospace",
+            theme: {
+                background: '#1e1e2e',
+                foreground: '#cdd6f4',
+                cursor: '#f5e0dc',
+                cursorAccent: '#1e1e2e',
+                selectionBackground: '#585b7066',
+                black: '#45475a',
+                red: '#f38ba8',
+                green: '#a6e3a1',
+                yellow: '#f9e2af',
+                blue: '#89b4fa',
+                magenta: '#f5c2e7',
+                cyan: '#94e2d5',
+                white: '#bac2de',
+                brightBlack: '#585b70',
+                brightRed: '#f38ba8',
+                brightGreen: '#a6e3a1',
+                brightYellow: '#f9e2af',
+                brightBlue: '#89b4fa',
+                brightMagenta: '#f5c2e7',
+                brightCyan: '#94e2d5',
+                brightWhite: '#a6adc8',
+            },
+            allowProposedApi: true,
+            scrollback: 10000,
         });
-    }, []);
 
-    const connect = useCallback(() => {
-        if (wsRef.current) {
-            wsRef.current.close();
-            wsRef.current = null;
-        }
+        const fitAddon = new FitAddon();
+        const webLinksAddon = new WebLinksAddon();
 
-        if (!selectedContainer?.containerId) return;
+        xterm.loadAddon(fitAddon);
+        xterm.loadAddon(webLinksAddon);
+
+        xterm.open(terminalRef.current);
+
+        setTimeout(() => {
+            try { fitAddon.fit(); } catch {}
+        }, 100);
+
+        xtermRef.current = xterm;
+        fitAddonRef.current = fitAddon;
+
+        const resizeObserver = new ResizeObserver(() => {
+            try { fitAddon.fit(); } catch {}
+        });
+        resizeObserver.observe(terminalRef.current);
+
+        xterm.writeln('\x1b[1;33mConnecting...\x1b[0m');
 
         const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const wsUrl = `${wsProtocol}//${window.location.host}/ws?type=terminal&container=${selectedContainer.containerId}&shell=${shell}&token=${token}`;
-
+        const wsUrl = `${wsProtocol}//${window.location.host}/ws?type=terminal&container=${container.containerId}&shell=${shell}&token=${token}`;
         const ws = new WebSocket(wsUrl);
         wsRef.current = ws;
 
+        ws.onopen = () => {
+            const { cols, rows } = xterm;
+            ws.send(JSON.stringify({ type: 'resize', cols, rows }));
+        };
+
         ws.onmessage = (event) => {
-            try {
-                const msg = JSON.parse(event.data);
-                if (msg.type === 'ready') {
-                    setConnected(true);
-                    appendOutput(`\r\n\x1b[1;32mConnected to ${selectedContainer.name || msg.containerId} (${msg.shell})\x1b[0m\r\n`);
-                } else if (msg.type === 'stdout' || msg.type === 'stderr') {
-                    appendOutput(msg.data);
-                } else if (msg.type === 'error') {
-                    appendOutput(`\r\n\x1b[31m${msg.data}\x1b[0m\r\n`);
-                } else if (msg.type === 'done') {
-                    appendOutput(`\r\n\x1b[33m${t.terminal.sessionEnded || 'Session ended.'}\x1b[0m\r\n`);
-                    setConnected(false);
-                }
-            } catch {}
+            if (typeof event.data === 'string') {
+                try {
+                    const msg = JSON.parse(event.data);
+                    if (msg.type === 'ready') {
+                        setConnected(true);
+                    } else if (msg.type === 'error') {
+                        xterm.writeln(`\r\n\x1b[31m${msg.data}\x1b[0m`);
+                    } else if (msg.type === 'done') {
+                        setConnected(false);
+                        xterm.writeln(`\r\n\x1b[33m${t.terminal.sessionEnded || 'Session ended.'}\x1b[0m`);
+                    }
+                    return;
+                } catch {}
+            }
+            if (ws.readyState === WebSocket.OPEN) {
+                xterm.write(typeof event.data === 'string' ? event.data : new Uint8Array(event.data));
+            }
         };
 
         ws.onerror = () => {
             setConnected(false);
-            appendOutput(`\r\n\x1b[31m${t.terminal.connectionError}\x1b[0m\r\n`);
+            xterm.writeln(`\r\n\x1b[31m${t.terminal.connectionError}\x1b[0m`);
         };
 
         ws.onclose = () => {
             setConnected(false);
             wsRef.current = null;
-            if (pingRef.current) {
-                clearInterval(pingRef.current);
-                pingRef.current = null;
-            }
         };
 
-        pingRef.current = setInterval(() => {
+        const onResize = ({ cols, rows }) => {
             if (ws.readyState === WebSocket.OPEN) {
-                ws.send(JSON.stringify({ type: 'ping' }));
-            }
-        }, 30000);
-    }, [selectedContainer, shell, token, appendOutput, t]);
-
-    useEffect(() => {
-        if (selectedContainer?.containerId) {
-            connect();
-        }
-        return () => {
-            if (wsRef.current) {
-                wsRef.current.close();
-                wsRef.current = null;
-            }
-            if (pingRef.current) {
-                clearInterval(pingRef.current);
-                pingRef.current = null;
+                ws.send(JSON.stringify({ type: 'resize', cols, rows }));
             }
         };
-    }, [selectedContainer, shell]);
+        xterm.onResize(onResize);
 
-    useEffect(() => {
-        if (terminalRef.current) {
-            terminalRef.current.scrollTop = terminalRef.current.scrollHeight;
-        }
-    }, [output]);
-
-    useEffect(() => {
-        if (connected && terminalRef.current) {
-            terminalRef.current.focus();
-        }
-    }, [connected]);
-
-    const sendInput = useCallback((data) => {
-        const ws = wsRef.current;
-        if (ws && ws.readyState === WebSocket.OPEN) {
-            ws.send(JSON.stringify({ type: 'input', data }));
-        }
-    }, []);
-
-    const handleTerminalKeyDown = useCallback((e) => {
-        if (!connected) return;
-
-        if (e.key === 'Backspace') {
-            e.preventDefault();
-            sendInput('\x7f');
-            return;
-        }
-
-        if (e.key === 'Tab') {
-            e.preventDefault();
-            sendInput('\t');
-            return;
-        }
-
-        if (e.key === 'Enter') {
-            e.preventDefault();
-            sendInput('\r');
-            return;
-        }
-
-        if (e.key === 'Escape') {
-            e.preventDefault();
-            sendInput('\x1b');
-            return;
-        }
-
-        if (e.key === 'ArrowUp') {
-            e.preventDefault();
-            sendInput('\x1b[A');
-            return;
-        }
-        if (e.key === 'ArrowDown') {
-            e.preventDefault();
-            sendInput('\x1b[B');
-            return;
-        }
-        if (e.key === 'ArrowRight') {
-            e.preventDefault();
-            sendInput('\x1b[C');
-            return;
-        }
-        if (e.key === 'ArrowLeft') {
-            e.preventDefault();
-            sendInput('\x1b[D');
-            return;
-        }
-
-        if (e.key === 'Home') {
-            e.preventDefault();
-            sendInput('\x1b[H');
-            return;
-        }
-        if (e.key === 'End') {
-            e.preventDefault();
-            sendInput('\x1b[F');
-            return;
-        }
-
-        if (e.key === 'Delete') {
-            e.preventDefault();
-            sendInput('\x1b[3~');
-            return;
-        }
-
-        if (e.key === 'PageUp') {
-            e.preventDefault();
-            sendInput('\x1b[5~');
-            return;
-        }
-        if (e.key === 'PageDown') {
-            e.preventDefault();
-            sendInput('\x1b[6~');
-            return;
-        }
-
-        if (e.ctrlKey) {
-            const ctrlMap = {
-                'a': '\x01', 'b': '\x02', 'c': '\x03', 'd': '\x04',
-                'e': '\x05', 'f': '\x06', 'g': '\x07', 'h': '\x08',
-                'i': '\x09', 'j': '\x0a', 'k': '\x0b', 'l': '\x0c',
-                'm': '\x0d', 'n': '\x0e', 'o': '\x0f', 'p': '\x10',
-                'q': '\x11', 'r': '\x12', 's': '\x13', 't': '\x14',
-                'u': '\x15', 'v': '\x16', 'w': '\x17', 'x': '\x18',
-                'y': '\x19', 'z': '\x1a',
-            };
-            const ch = ctrlMap[e.key.toLowerCase()];
-            if (ch) {
-                e.preventDefault();
-                sendInput(ch);
-                return;
+        const onData = (data) => {
+            if (ws.readyState === WebSocket.OPEN) {
+                ws.send(data);
             }
-        }
+        };
+        xterm.onData(onData);
 
-        if (e.key.length === 1 && !e.ctrlKey && !e.metaKey) {
-            e.preventDefault();
-            sendInput(e.key);
-        }
-    }, [connected, sendInput]);
+        return () => {
+            resizeObserver.disconnect();
+            ws.close();
+            xterm.dispose();
+            wsRef.current = null;
+            xtermRef.current = null;
+            fitAddonRef.current = null;
+        };
+    }, [container, shell, token]);
 
-    const handleClear = () => {
-        setOutput('');
-    };
+    return (
+        <div className="card overflow-hidden">
+            <div className="bg-surface-200 dark:bg-surface-800 px-4 py-2 border-b border-border flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                    <TerminalIcon size={14} className={connected ? 'text-success' : 'text-danger'} />
+                    <span className="text-xs text-text-muted">
+                        {container.name} • {shell.replace('/bin/', '')}
+                    </span>
+                </div>
+                <div className="flex items-center gap-2">
+                    <button onClick={onDisconnect} className="btn-sm btn-secondary text-xs">
+                        {t.terminal.disconnect || '断开'}
+                    </button>
+                </div>
+            </div>
+            <div ref={terminalRef} style={{ height: '500px', padding: '4px' }} />
+        </div>
+    );
+}
 
-    const handleReconnect = () => {
-        setOutput('');
-        setConnected(false);
-        connect();
-    };
+export default function Terminal({ stackName, services }) {
+    const [selectedContainer, setSelectedContainer] = useState(null);
+    const [shell, setShell] = useState('/bin/sh');
+    const { t } = useI18n();
+
+    const runningServices = (services || []).filter(
+        (svc) => svc.status === 'running' && svc.containerId
+    );
 
     const handleSelectContainer = (svc) => {
-        if (wsRef.current) {
-            wsRef.current.close();
-            wsRef.current = null;
-        }
-        setOutput('');
-        setConnected(false);
         setSelectedContainer(svc);
     };
 
-    const handleShellChange = (newShell) => {
-        if (connected) {
-            if (wsRef.current) {
-                wsRef.current.close();
-                wsRef.current = null;
-            }
-            setOutput('');
-            setConnected(false);
-        }
-        setShell(newShell);
-    };
-
     const handleDisconnect = () => {
-        if (wsRef.current) {
-            wsRef.current.close();
-            wsRef.current = null;
-        }
-        setOutput('');
-        setConnected(false);
         setSelectedContainer(null);
     };
 
@@ -266,18 +183,15 @@ export default function Terminal({ stackName, services, initialContainer }) {
                     <h2 className="text-lg font-semibold text-text-primary">{t.terminal.title}</h2>
                     <div className="flex items-center gap-2">
                         <span className="text-xs text-text-muted">{t.terminal.selectShell}</span>
-                        <button
-                            onClick={() => handleShellChange('/bin/sh')}
-                            className={`btn-sm ${shell === '/bin/sh' ? 'btn-primary' : 'btn-secondary'}`}
-                        >
-                            sh
-                        </button>
-                        <button
-                            onClick={() => handleShellChange('/bin/bash')}
-                            className={`btn-sm ${shell === '/bin/bash' ? 'btn-primary' : 'btn-secondary'}`}
-                        >
-                            bash
-                        </button>
+                        {SHELLS.map((s) => (
+                            <button
+                                key={s}
+                                onClick={() => setShell(s)}
+                                className={`btn-sm ${shell === s ? 'btn-primary' : 'btn-secondary'}`}
+                            >
+                                {s.replace('/bin/', '')}
+                            </button>
+                        ))}
                     </div>
                 </div>
 
@@ -326,62 +240,28 @@ export default function Terminal({ stackName, services, initialContainer }) {
             <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                     <h2 className="text-lg font-semibold text-text-primary">{t.terminal.title}</h2>
-                    <span className="text-text-muted text-sm">
-                        {selectedContainer.name}
-                    </span>
+                    <span className="text-text-muted text-sm">{selectedContainer.name}</span>
                 </div>
                 <div className="flex items-center gap-2">
                     <span className="text-xs text-text-muted">{t.terminal.selectShell}</span>
-                    <button
-                        onClick={() => handleShellChange('/bin/sh')}
-                        className={`btn-sm ${shell === '/bin/sh' ? 'btn-primary' : 'btn-secondary'}`}
-                    >
-                        sh
-                    </button>
-                    <button
-                        onClick={() => handleShellChange('/bin/bash')}
-                        className={`btn-sm ${shell === '/bin/bash' ? 'btn-primary' : 'btn-secondary'}`}
-                    >
-                        bash
-                    </button>
-                    <button
-                        onClick={handleDisconnect}
-                        className="btn-sm btn-secondary"
-                    >
-                        {t.terminal.disconnect || '断开'}
-                    </button>
+                    {SHELLS.map((s) => (
+                        <button
+                            key={s}
+                            onClick={() => setShell(s)}
+                            className={`btn-sm ${shell === s ? 'btn-primary' : 'btn-secondary'}`}
+                        >
+                            {s.replace('/bin/', '')}
+                        </button>
+                    ))}
                 </div>
             </div>
 
-            <div className="card overflow-hidden">
-                <div className="bg-surface-200 dark:bg-surface-800 px-4 py-2 border-b border-border flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                        <TerminalIcon size={14} className={connected ? 'text-success' : 'text-danger'} />
-                        <span className="text-xs text-text-muted">
-                            {selectedContainer.name} • {shell.replace('/bin/', '')}
-                        </span>
-                    </div>
-                    <div className="flex items-center gap-1">
-                        {!connected && (
-                            <button onClick={handleReconnect} className="btn-ghost btn-sm text-warning">
-                                ↻
-                            </button>
-                        )}
-                        <button onClick={handleClear} className="btn-ghost btn-sm text-text-muted">
-                            <Trash2 size={12} />
-                        </button>
-                    </div>
-                </div>
-                <div
-                    ref={terminalRef}
-                    tabIndex={0}
-                    onKeyDown={handleTerminalKeyDown}
-                    className="bg-surface-50 dark:bg-surface-950 p-4 font-mono text-xs leading-relaxed overflow-auto cursor-text focus:outline-none focus:ring-1 focus:ring-primary-500"
-                    style={{ height: '400px', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}
-                >
-                    {output || (connected ? '' : t.terminal.containerInput)}
-                </div>
-            </div>
+            <XtermTerminal
+                key={`${selectedContainer.containerId}-${shell}`}
+                container={selectedContainer}
+                shell={shell}
+                onDisconnect={handleDisconnect}
+            />
         </div>
     );
 }

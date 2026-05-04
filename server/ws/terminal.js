@@ -1,6 +1,14 @@
 const jwt = require('jsonwebtoken');
+const os = require('os');
 
-const ALLOWED_SHELLS = ['/bin/sh', '/bin/bash'];
+let pty;
+try {
+    pty = require('node-pty');
+} catch {
+    pty = null;
+}
+
+const ALLOWED_SHELLS = ['/bin/sh', '/bin/bash', '/bin/ash', '/bin/zsh'];
 
 function createTerminalWsHandler(stackManager, jwtSecret, db) {
     return function handleTerminal(ws, req, url) {
@@ -30,84 +38,107 @@ function createTerminalWsHandler(stackManager, jwtSecret, db) {
         }
 
         if (!ALLOWED_SHELLS.includes(shell)) {
-            ws.close(4003, 'Shell not allowed. Use /bin/sh or /bin/bash');
+            ws.close(4003, 'Shell not allowed');
             return;
         }
 
-        if (!/^[a-zA-Z0-9][a-zA-Z0-9_.-]+$/.test(containerId)) {
+        if (!/^[a-zA-Z0-9][a-zA-Z0-9_.\-]+$/.test(containerId)) {
             ws.close(4003, 'Invalid container ID format');
             return;
         }
 
+        if (!pty) {
+            ws.send(JSON.stringify({ type: 'error', data: 'node-pty is not available on this system' }));
+            ws.close(4005, 'node-pty not available');
+            return;
+        }
+
+        let ptyProcess = null;
         let destroyed = false;
-        let proc = null;
 
         try {
-            proc = stackManager.docker.execContainerInteractive(containerId, shell);
+            ptyProcess = pty.spawn('docker', ['exec', '-it', containerId, shell], {
+                name: 'xterm-256color',
+                cols: 80,
+                rows: 24,
+                cwd: os.homedir(),
+                env: {
+                    ...process.env,
+                    TERM: 'xterm-256color',
+                    COLORTERM: 'truecolor',
+                },
+            });
         } catch (err) {
-            ws.send(JSON.stringify({ type: 'error', data: 'Failed to exec into container: ' + err.message }));
+            ws.send(JSON.stringify({ type: 'error', data: 'Failed to spawn terminal: ' + err.message }));
             ws.close();
             return;
         }
 
-        ws.send(JSON.stringify({ type: 'ready', mode: 'container', containerId, shell }));
+        ws.send(JSON.stringify({
+            type: 'ready',
+            mode: 'container',
+            containerId,
+            shell,
+            cols: 80,
+            rows: 24,
+        }));
 
-        proc.stdout.on('data', (chunk) => {
+        ptyProcess.onData((data) => {
             if (ws.readyState === 1 && !destroyed) {
-                ws.send(JSON.stringify({ type: 'stdout', data: chunk.toString('utf8') }));
+                ws.send(data);
             }
         });
 
-        proc.stderr.on('data', (chunk) => {
+        ptyProcess.onExit(({ exitCode }) => {
+            ptyProcess = null;
             if (ws.readyState === 1 && !destroyed) {
-                ws.send(JSON.stringify({ type: 'stderr', data: chunk.toString('utf8') }));
+                ws.send(JSON.stringify({ type: 'done', code: exitCode }));
             }
         });
 
-        proc.on('close', (code) => {
-            proc = null;
-            if (ws.readyState === 1 && !destroyed) {
-                ws.send(JSON.stringify({ type: 'done', code: code ?? 0 }));
-            }
-        });
+        ws.on('message', (rawData) => {
+            if (destroyed || !ptyProcess) return;
 
-        proc.on('error', (err) => {
-            proc = null;
-            if (ws.readyState === 1 && !destroyed) {
-                ws.send(JSON.stringify({ type: 'error', data: err.message }));
-                ws.send(JSON.stringify({ type: 'done', code: 1 }));
-            }
-        });
+            const str = rawData.toString();
 
-        ws.on('message', (data) => {
-            if (destroyed || !proc) return;
             try {
-                const msg = JSON.parse(data.toString());
-                if (msg.type === 'input') {
+                const msg = JSON.parse(str);
+                if (msg.type === 'resize' && typeof msg.cols === 'number' && typeof msg.rows === 'number') {
+                    const cols = Math.max(1, Math.min(500, msg.cols));
+                    const rows = Math.max(1, Math.min(200, msg.rows));
                     try {
-                        if (proc.stdin.writable) {
-                            proc.stdin.write(msg.data);
-                        }
+                        ptyProcess.resize(cols, rows);
                     } catch {}
+                    return;
                 }
-            } catch {}
+                if (msg.type === 'ping') {
+                    if (ws.readyState === 1) {
+                        ws.send(JSON.stringify({ type: 'pong' }));
+                    }
+                    return;
+                }
+                if (msg.type === 'input' && typeof msg.data === 'string') {
+                    ptyProcess.write(msg.data);
+                    return;
+                }
+            } catch {
+                ptyProcess.write(str);
+            }
         });
 
         ws.on('close', () => {
             destroyed = true;
-            if (proc) {
-                try { proc.stdin.end(); } catch {}
-                try { proc.kill('SIGKILL'); } catch {}
-                proc = null;
+            if (ptyProcess) {
+                try { ptyProcess.kill(); } catch {}
+                ptyProcess = null;
             }
         });
 
         ws.on('error', () => {
             destroyed = true;
-            if (proc) {
-                try { proc.stdin.end(); } catch {}
-                try { proc.kill('SIGKILL'); } catch {}
-                proc = null;
+            if (ptyProcess) {
+                try { ptyProcess.kill(); } catch {}
+                ptyProcess = null;
             }
         });
     };
